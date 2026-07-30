@@ -1,0 +1,316 @@
+# Portfolio Tracker — Documentation
+
+Final project, Kodilla Java Developer bootcamp.
+
+The project consists of two applications, each in its own repository:
+
+- **portfolio-tracker-backend** — the REST API (this repository)
+- **portfolio-tracker-frontend** — the Vaadin user interface
+
+They share no code. They communicate only over HTTP, through the REST API
+described below.
+
+---
+
+## 1. What the project is for
+
+**Portfolio Tracker keeps track of a cryptocurrency investment portfolio and
+tells you what it is worth right now, in your own currency.**
+
+Anyone holding crypto faces the same small, recurring annoyance: the coins were
+bought at different times and different prices, exchanges report values in US
+dollars, and the actual question — *am I up or down, in the money I actually
+spend?* — takes a spreadsheet to answer. This application answers it directly.
+
+### What a user can do
+
+**Record what they bought and sold.** Every purchase and sale is entered as a
+transaction, with quantity, unit price, fee and date. This ledger is the only
+thing the user maintains by hand.
+
+**See their current position.** The application works out, for each asset:
+
+- how much is still held, after accounting for any sales;
+- what it cost on average, using the average-cost method;
+- what it is worth at today's price;
+- the profit or loss, in absolute terms and as a percentage.
+
+Holdings are never stored. They are recalculated from the transaction ledger
+every time, so the ledger cannot drift out of step with the totals. Correcting a
+mistyped transaction immediately corrects every figure derived from it.
+
+**See the value in their own currency.** A portfolio has a reporting currency.
+Prices arrive in US dollars, so the application converts them — to Polish złoty
+directly, or to any other currency as a cross rate calculated through złoty.
+
+**Set alerts.** A user can ask to be told when an asset's price rises above or
+falls below a chosen figure, or when a whole portfolio's value crosses one. The
+application checks these automatically every fifteen minutes. When one fires, it
+is recorded and shown on the dashboard until acknowledged.
+
+> The application is a **tracker, not an advisor**. It never suggests what to buy
+> or sell. Alerts are thresholds the user sets for themselves, and the
+> application only reports that a number was crossed.
+
+**Review the history.** Every change — every transaction, every alert, every
+price refresh — is written to an audit trail that can be browsed through the API.
+
+### Why two data sources
+
+The interesting part of this project is that neither external source is useful
+alone:
+
+- **CoinGecko** knows what a bitcoin is worth, but only in dollars.
+- **NBP**, the Polish National Bank, knows what a dollar is worth in złoty, but
+  nothing about crypto.
+
+Combining them answers the question the user actually has. A portfolio holding
+0.35 BTC is worth $22,395.80 according to CoinGecko; at NBP's rate of 3.7962 złoty
+to the dollar, that is 85,018.94 złoty — which is the number that means something
+to someone whose salary and rent are in złoty.
+
+---
+
+## 2. Running the project, step by step
+
+### What you need first
+
+- **Java 17 or newer.** Check with `java -version`.
+- **An internet connection.** The applications call CoinGecko and NBP, and
+  Vaadin downloads its frontend toolchain the first time it builds.
+- **No database.** The backend runs an embedded H2 database that needs no setup.
+  (MySQL is supported if you prefer — see section 3.)
+
+Everything else, including Gradle, comes with the projects.
+
+### Step 1 — Get both repositories
+
+```
+git clone <url-of-portfolio-tracker-backend>
+git clone <url-of-portfolio-tracker-frontend>
+```
+
+Put them side by side in the same folder.
+
+### Step 2 — Start the backend
+
+In the `portfolio-tracker-backend` folder:
+
+```
+./gradlew bootRun
+```
+
+On Windows use `gradlew bootRun`.
+
+The first run downloads dependencies and takes a minute or two. Wait for:
+
+```
+Started PortfolioTrackerApplication in 22.5 seconds
+Seeded demo data: user 'demo' (id=1) with 2 portfolios, 4 assets, 6 transactions
+```
+
+The API is now at **http://localhost:8080**, and there is already demo data to
+look at, so nothing starts out empty.
+
+**If you see a "port already in use" error**, something else is using port 8080 —
+Apache, XAMPP and Jenkins all default to it. Start on another port instead:
+
+```
+./gradlew bootRun --args='--server.port=8090'
+```
+
+Remember which port you chose; step 3 needs it.
+
+### Step 3 — Start the frontend
+
+Leave the backend running. Open a **second terminal**, go to
+`portfolio-tracker-frontend`, and run:
+
+```
+./gradlew bootRun
+```
+
+If you started the backend on a port other than 8080, tell the frontend:
+
+```
+./gradlew bootRun --args='--app.backend.base-url=http://localhost:8090/v1'
+```
+
+**The first start takes several minutes.** Vaadin downloads Node.js and the npm
+packages it needs to build the browser bundle. This happens once; later starts
+take seconds. Wait for:
+
+```
+Started FrontendApplication
+```
+
+### Step 4 — Open it
+
+Go to **http://localhost:8081** in a browser.
+
+You will see the Dashboard, showing the demo user's portfolio.
+
+### Step 5 — Load live market data
+
+The demo data has transactions but no prices yet, so the value columns start
+empty. Click **"Refresh market data"** on the dashboard.
+
+This calls CoinGecko and NBP and fills in every figure: current prices, market
+value, profit and loss, and the total in złoty. From then on the backend refreshes
+by itself every fifteen minutes for as long as it is running.
+
+### Step 6 — Try it out
+
+- **Dashboard** — switch between the two demo portfolios; note that "Long term"
+  reports in złoty and "Experiments" in dollars.
+- **Transactions** — add a purchase and watch the dashboard totals change. Try
+  selling more than you own; the application refuses and explains why.
+- **Alerts** — add a price alert with a very low threshold so it is certain to
+  fire, then press "Check alerts now". It appears on the dashboard.
+- **Assets** — add another coin using its CoinGecko identifier, for example
+  `dogecoin` or `litecoin`, then refresh market data to price it.
+- **Market data** — see exactly what came from each of the two providers.
+
+### Stopping
+
+Press `Ctrl+C` in each terminal. The backend keeps its data in a `data/` folder,
+so it is all still there next time. Deleting that folder resets everything and
+re-seeds the demo data.
+
+### Running the tests
+
+In the backend folder:
+
+```
+./gradlew test
+```
+
+286 tests. The coverage report lands in
+`build/reports/jacoco/test/html/index.html`. Running `./gradlew check` also fails
+the build if coverage falls below 65%.
+
+---
+
+## 3. Technical notes
+
+### External API access
+
+**Neither external API needs a key, an account, or any authorisation.** Both are
+public and free. There is nothing to configure before running the project — this
+is why they were chosen over alternatives that require registration.
+
+| Provider | What it supplies | Endpoint used |
+|---|---|---|
+| **CoinGecko** | Cryptocurrency prices in USD, plus 24-hour change | `https://api.coingecko.com/api/v3/simple/price` |
+| **NBP** (Polish National Bank) | Daily average exchange rate table | `https://api.nbp.pl/api/exchangerates/tables/A` |
+
+You can confirm both are reachable from your machine without running anything:
+
+```
+curl "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+```
+
+```
+curl "https://api.nbp.pl/api/exchangerates/tables/A?format=json"
+```
+
+**Rate limits.** CoinGecko's free tier is rate limited. The default refresh
+interval of fifteen minutes stays comfortably inside it. If you shorten
+`app.scheduler.price-refresh-ms` a lot, you may be throttled; the application
+reports that as HTTP 503 rather than pretending the data is missing.
+
+**When a provider is down.** The two are refreshed independently. If CoinGecko is
+unreachable, exchange rates are still updated, and the response says which
+provider failed. Nothing is silently skipped.
+
+### The API itself
+
+The REST API has **48 endpoints** under `/v1`, covering GET, POST, PUT and DELETE.
+The full list is in `README.md`.
+
+Errors always come back in the same shape, so a client only needs to handle one:
+
+```json
+{
+  "status": 422,
+  "error": "Unprocessable Entity",
+  "message": "Cannot sell 99 BTC: portfolio only holds 0.35000000",
+  "fieldErrors": {},
+  "timestamp": "2026-07-30T08:34:59.645"
+}
+```
+
+| Status | When |
+|---|---|
+| 400 | Malformed body, failed validation, missing or mistyped parameter |
+| 404 | No such record |
+| 409 | Would break a uniqueness rule, e.g. a username already taken |
+| 422 | Valid request that breaks a domain rule, e.g. overselling |
+| 503 | An external provider is unavailable |
+
+For validation failures, `fieldErrors` names each offending field:
+
+```json
+{
+  "status": 400,
+  "error": "Bad Request",
+  "message": "Request validation failed",
+  "fieldErrors": {
+    "username": "username must be 3-60 characters",
+    "email": "email must be a valid address"
+  }
+}
+```
+
+### Configuration
+
+Any property can be overridden on the command line as `--name=value`. The ones
+that matter most:
+
+| Property | Default | Purpose |
+|---|---|---|
+| `server.port` | `8080` (backend), `8081` (frontend) | HTTP port |
+| `app.backend.base-url` | `http://localhost:8080/v1` | Frontend: where the API is |
+| `app.cors.allowed-origins` | `http://localhost:8081` | Backend: where the UI is |
+| `app.scheduler.enabled` | `true` | Turn scheduled jobs off entirely |
+| `app.scheduler.price-refresh-ms` | `900000` | Price refresh interval |
+| `app.alerts.cooldown-minutes` | `60` | Minimum gap before an alert refires |
+| `app.seed-demo-data` | `true` | Seed demo data into an empty database |
+
+If you move the backend to a different port, change **both**
+`app.backend.base-url` on the frontend and `app.cors.allowed-origins` on the
+backend, or the browser will block the calls.
+
+### Using MySQL instead of H2
+
+H2 is the default so that the project runs with no setup at all. To use MySQL:
+
+```sql
+CREATE DATABASE portfolio_tracker CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+```
+./gradlew bootRun --args='--spring.profiles.active=mysql --spring.datasource.username=root --spring.datasource.password=YOUR_PASSWORD'
+```
+
+Credentials are passed on the command line rather than committed to the
+repository. The schema is created automatically on first start.
+
+### Authentication
+
+There is none, and none is required by the project brief. The frontend shows the
+data of one user, chosen by `app.backend.user-id` (the seeded demo user by
+default). The `users` table and the audit trail are structured so that
+authentication could be added without reshaping the data model.
+
+### Requirements checklist
+
+| Requirement | Where it is met |
+|---|---|
+| 20+ REST endpoints, all four HTTP methods | 48 endpoints; see `README.md` |
+| 2+ external data sources | CoinGecko and NBP, combined to value a portfolio |
+| Scheduler | `MarketDataScheduler`: price/rate refresh and alert evaluation, plus nightly history purge |
+| 10+ database write operations | Over 20; CRUD for five entities, plus snapshots, rates, alert events and audit rows |
+| 65%+ test coverage | 286 tests, 91.9% instruction coverage, enforced by the build |
+| 2+ design patterns | Strategy, Factory, Observer, Adapter and Facade |
+| Vaadin view layer | Separate frontend repository, five screens |

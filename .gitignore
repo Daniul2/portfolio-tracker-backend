@@ -1,0 +1,32 @@
+# Build output
+build/
+bin/
+out/
+!gradle/wrapper/gradle-wrapper.jar
+.gradle/
+
+# IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse / VS Code
+.classpath
+.project
+.settings/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and local data
+*.log
+data/
+*.db
+*.mv.db
+*.trace.db
+
+# Local overrides (may contain credentials)
+src/main/resources/application-local.properties
