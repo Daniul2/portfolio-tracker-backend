@@ -11,15 +11,19 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /** Turns every exception into the same {@link ErrorResponse} shape. */
 @RestControllerAdvice
@@ -92,6 +96,35 @@ public class GlobalExceptionHandler {
                 400, "Bad Request", "Parameter has the wrong type",
                 Map.of(String.valueOf(e.getName()), "'" + e.getValue() + "' is not valid here"),
                 LocalDateTime.now()));
+    }
+
+    /** No mapping and no static file for the requested path — an ordinary 404. */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.of(
+                404, "Not Found", "No endpoint at " + e.getResourcePath()));
+    }
+
+    /** Right path, wrong HTTP method — e.g. DELETE on a collection endpoint. */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException e) {
+        String supported = e.getSupportedHttpMethods() == null ? "" : e.getSupportedHttpMethods()
+                .stream().map(Object::toString).collect(Collectors.joining(", "));
+        String message = supported.isEmpty()
+                ? e.getMethod() + " is not supported here"
+                : e.getMethod() + " is not supported here; try " + supported;
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ErrorResponse.of(405, "Method Not Allowed", message));
+    }
+
+    /** Body sent as something other than JSON. */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedMediaType(
+            HttpMediaTypeNotSupportedException e) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ErrorResponse.of(415, "Unsupported Media Type",
+                        "Content-Type " + e.getContentType() + " is not supported; use application/json"));
     }
 
     @ExceptionHandler(Exception.class)
