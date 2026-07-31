@@ -6,7 +6,7 @@ portfolio value crosses a threshold you set yourself.
 
 Built as the final project for the Kodilla Java Developer bootcamp.
 
-**Frontend repository:** [portfolio-tracker-frontend](../portfolio-tracker-frontend)
+**Frontend repository:** https://github.com/Daniul2/portfolio-tracker-frontend
 — a Vaadin application that consumes this API. The two projects share no code,
 only this REST contract.
 
