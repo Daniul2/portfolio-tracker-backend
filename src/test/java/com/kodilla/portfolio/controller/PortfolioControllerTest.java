@@ -86,7 +86,7 @@ class PortfolioControllerTest {
         PortfolioSummaryResponse summary = new PortfolioSummaryResponse(1L, "Long term", "PLN",
                 new BigDecimal("21550.00"), new BigDecimal("27153.23"), new BigDecimal("5603.22"),
                 new BigDecimal("26.00"), new BigDecimal("3.7962"), new BigDecimal("103079.07"),
-                List.of(holding), LocalDateTime.now());
+                true, List.of(holding), LocalDateTime.now());
         when(portfolioFacade.summarise(1L)).thenReturn(summary);
 
         mockMvc.perform(get("/v1/portfolios/1/summary"))

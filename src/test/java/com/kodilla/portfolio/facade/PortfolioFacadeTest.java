@@ -59,7 +59,7 @@ class PortfolioFacadeTest {
         return new PortfolioValuation(10L, "Main", "PLN",
                 new BigDecimal("100"), new BigDecimal(totalUsd), BigDecimal.ZERO,
                 BigDecimal.ZERO, new BigDecimal("3.7962"), new BigDecimal("1000"),
-                List.of(), LocalDateTime.now());
+                true, List.of(), LocalDateTime.now());
     }
 
     @Test
@@ -121,7 +121,7 @@ class PortfolioFacadeTest {
         when(portfolioService.requirePortfolio(10L)).thenReturn(portfolio);
         when(valuationService.value(portfolio)).thenReturn(new PortfolioValuation(
                 10L, "Main", "PLN", BigDecimal.ZERO, null, null, null, null, null,
-                List.of(), LocalDateTime.now()));
+                false, List.of(), LocalDateTime.now()));
         when(alertService.findUnacknowledgedEvents()).thenReturn(List.of());
 
         assertThat(facade.dashboardFor(1L).combinedValueUsd()).isEqualByComparingTo("0");

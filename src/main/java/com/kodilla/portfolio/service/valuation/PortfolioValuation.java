@@ -15,6 +15,7 @@ public record PortfolioValuation(
         BigDecimal totalPnlPercent,
         BigDecimal fxRate,
         BigDecimal totalValueBase,
+        boolean fullyPriced,
         List<HoldingValuation> holdings,
         LocalDateTime valuedAt) {
 }

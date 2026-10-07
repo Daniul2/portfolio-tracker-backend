@@ -95,7 +95,7 @@ class TransactionControllerTest {
         PortfolioSummaryResponse summary = new PortfolioSummaryResponse(1L, "Long term", "PLN",
                 new BigDecimal("10500.00"), new BigDecimal("12000.00"), new BigDecimal("1500.00"),
                 new BigDecimal("14.29"), new BigDecimal("3.7962"), new BigDecimal("45554.40"),
-                List.of(), LocalDateTime.now());
+                true, List.of(), LocalDateTime.now());
         when(portfolioFacade.recordTransactionAndRevalue(any(TransactionRequest.class)))
                 .thenReturn(summary);
 

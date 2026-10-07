@@ -66,6 +66,7 @@ public final class PortfolioDtos {
             BigDecimal totalPnlPercent,
             BigDecimal fxRate,
             BigDecimal totalValueBase,
+            boolean fullyPriced,
             List<HoldingResponse> holdings,
             LocalDateTime valuedAt) {
     }

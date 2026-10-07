@@ -25,6 +25,7 @@ public class PortfolioValuationService {
 
     private static final int MONEY_SCALE = 2;
     private static final int PERCENT_SCALE = 2;
+    private static final BigDecimal ONE_HUNDRED = BigDecimal.valueOf(100);
 
     private final TransactionRepository transactionRepository;
     private final HoldingCalculator holdingCalculator;
@@ -55,7 +56,9 @@ public class PortfolioValuationService {
 
         List<HoldingValuation> valuations = new ArrayList<>();
         BigDecimal totalCost = BigDecimal.ZERO;
+        BigDecimal pricedCost = BigDecimal.ZERO;
         BigDecimal totalValue = BigDecimal.ZERO;
+        int pricedCount = 0;
 
         for (Holding holding : holdings) {
             PriceSnapshot snapshot = latestPrices.get(holding.asset().getId());
@@ -69,6 +72,8 @@ public class PortfolioValuationService {
                 continue;
             }
 
+            pricedCount++;
+            pricedCost = pricedCost.add(cost);
             BigDecimal marketValue = holding.quantity().multiply(price);
             BigDecimal pnl = marketValue.subtract(cost);
             BigDecimal pnlPercent = percentOf(pnl, cost);
@@ -84,28 +89,36 @@ public class PortfolioValuationService {
                     valueBase));
         }
 
-        BigDecimal finalTotalValue = totalValue;
-        BigDecimal totalPnl = totalValue.subtract(totalCost);
-        BigDecimal totalValueBase = fxRate.map(rate -> scaleMoney(finalTotalValue.multiply(rate))).orElse(null);
+        // Profit is measured only against what could be priced.
+        boolean fullyPriced = pricedCount == holdings.size();
+        boolean anyValue = pricedCount > 0 || holdings.isEmpty();
+        BigDecimal value = anyValue ? totalValue : null;
+        BigDecimal pnl = anyValue ? totalValue.subtract(pricedCost) : null;
+        BigDecimal valueBase = value == null ? null
+                : fxRate.map(rate -> scaleMoney(value.multiply(rate))).orElse(null);
 
         return new PortfolioValuation(
                 portfolio.getId(),
                 portfolio.getName(),
                 portfolio.getBaseCurrency(),
                 scaleMoney(totalCost),
-                scaleMoney(totalValue),
-                scaleMoney(totalPnl),
-                percentOf(totalPnl, totalCost),
+                scaleMoney(value),
+                scaleMoney(pnl),
+                pnl == null ? null : percentOf(pnl, pricedCost),
                 fxRate.orElse(null),
-                totalValueBase,
+                valueBase,
+                fullyPriced,
                 valuations,
                 LocalDateTime.now());
     }
 
-    /** Total market value in USD, used by portfolio-level alert strategies. */
+    /**
+     * Total market value in USD for portfolio-level alerts, or null while any holding is unpriced.
+     */
     @Transactional(readOnly = true)
     public BigDecimal totalValueUsd(Portfolio portfolio) {
-        return value(portfolio).totalValueUsd();
+        PortfolioValuation valuation = value(portfolio);
+        return valuation.fullyPriced() ? valuation.totalValueUsd() : null;
     }
 
     private BigDecimal percentOf(BigDecimal amount, BigDecimal base) {
@@ -113,7 +126,7 @@ public class PortfolioValuationService {
             // No cost basis means percentage change is undefined, not zero.
             return null;
         }
-        return amount.multiply(BigDecimal.valueOf(100))
+        return amount.multiply(ONE_HUNDRED)
                 .divide(base, PERCENT_SCALE, RoundingMode.HALF_UP);
     }
 

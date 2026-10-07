@@ -155,6 +155,7 @@ public final class DtoMapper {
                 valuation.totalPnlPercent(),
                 valuation.fxRate(),
                 valuation.totalValueBase(),
+                valuation.fullyPriced(),
                 holdings,
                 valuation.valuedAt());
     }

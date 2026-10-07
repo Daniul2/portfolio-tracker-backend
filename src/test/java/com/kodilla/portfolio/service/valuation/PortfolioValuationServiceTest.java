@@ -126,6 +126,43 @@ class PortfolioValuationServiceTest {
         // Its cost still counts, but its value does not.
         assertThat(valuation.totalCostUsd()).isEqualByComparingTo("60000.00");
         assertThat(valuation.totalValueUsd()).isEqualByComparingTo("50000.00");
+        // Profit compares like with like: the priced BTC against what BTC cost.
+        assertThat(valuation.totalPnlUsd()).isEqualByComparingTo("10000.00");
+        assertThat(valuation.totalPnlPercent()).isEqualByComparingTo("25.00");
+        assertThat(valuation.fullyPriced()).isFalse();
+    }
+
+    @Test
+    @DisplayName("before any price arrives the value is unknown, not a 100% loss")
+    void nothingPricedIsUnknownNotALoss() {
+        when(transactionRepository.findByPortfolioIdOrderByExecutedAtDesc(10L)).thenReturn(
+                List.of(TestFixtures.buy(1L, portfolio, bitcoin, "1", "40000", past)));
+        when(priceService.findLatestPrices()).thenReturn(Map.of());
+        when(exchangeRateService.usdToCurrencyRate("PLN"))
+                .thenReturn(Optional.of(new BigDecimal("4.00")));
+
+        PortfolioValuation valuation = service.value(portfolio);
+
+        assertThat(valuation.totalCostUsd()).isEqualByComparingTo("40000.00");
+        assertThat(valuation.totalValueUsd()).isNull();
+        assertThat(valuation.totalPnlUsd()).isNull();
+        assertThat(valuation.totalPnlPercent()).isNull();
+        assertThat(valuation.totalValueBase()).isNull();
+        assertThat(valuation.fullyPriced()).isFalse();
+    }
+
+    @Test
+    @DisplayName("alerts see no portfolio value while any holding is unpriced")
+    void partialValueIsHiddenFromAlerts() {
+        when(transactionRepository.findByPortfolioIdOrderByExecutedAtDesc(10L)).thenReturn(List.of(
+                TestFixtures.buy(1L, portfolio, bitcoin, "1", "40000", past),
+                TestFixtures.buy(2L, portfolio, ethereum, "10", "2000", past)));
+        when(priceService.findLatestPrices())
+                .thenReturn(Map.of(100L, TestFixtures.snapshot(1L, bitcoin, "50000")));
+        when(exchangeRateService.usdToCurrencyRate("PLN")).thenReturn(Optional.empty());
+
+        // A "value fell below" alert must not fire on a total missing ETH.
+        assertThat(service.totalValueUsd(portfolio)).isNull();
     }
 
     @Test
