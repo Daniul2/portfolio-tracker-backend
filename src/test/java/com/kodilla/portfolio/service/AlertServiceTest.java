@@ -10,6 +10,9 @@ import com.kodilla.portfolio.repository.AlertEventRepository;
 import com.kodilla.portfolio.repository.AlertRepository;
 import com.kodilla.portfolio.repository.AssetRepository;
 import com.kodilla.portfolio.repository.PortfolioRepository;
+import com.kodilla.portfolio.repository.PriceSnapshotRepository;
+import com.kodilla.portfolio.repository.TransactionRepository;
+import com.kodilla.portfolio.repository.UserRepository;
 import com.kodilla.portfolio.service.alert.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,6 +42,12 @@ class AlertServiceTest {
     @Mock
     private AssetRepository assetRepository;
     @Mock
+    private UserRepository userRepository;
+    @Mock
+    private TransactionRepository transactionRepository;
+    @Mock
+    private PriceSnapshotRepository snapshotRepository;
+    @Mock
     private AuditService auditService;
 
     private AlertService service;
@@ -54,8 +63,12 @@ class AlertServiceTest {
                 new PriceBelowAlertStrategy(),
                 new PortfolioValueAboveAlertStrategy(),
                 new PortfolioValueBelowAlertStrategy()));
-        service = new AlertService(alertRepository, alertEventRepository, portfolioRepository,
-                assetRepository, factory, auditService);
+        PortfolioService portfolioService = new PortfolioService(
+                portfolioRepository, userRepository, transactionRepository, auditService);
+        AssetService assetService = new AssetService(
+                assetRepository, transactionRepository, alertRepository, snapshotRepository, auditService);
+        service = new AlertService(alertRepository, alertEventRepository, portfolioService,
+                assetService, factory, auditService);
     }
 
     @Test
@@ -219,7 +232,7 @@ class AlertServiceTest {
         TestFixtures.setId(event, 3L);
 
         when(alertRepository.findAll()).thenReturn(List.of(alert));
-        when(portfolioRepository.existsById(10L)).thenReturn(true);
+        when(portfolioRepository.findById(10L)).thenReturn(Optional.of(portfolio));
         when(alertRepository.findByPortfolioId(10L)).thenReturn(List.of(alert));
         when(alertEventRepository.findByAlertPortfolioIdOrderByCreatedAtDesc(10L))
                 .thenReturn(List.of(event));
@@ -235,7 +248,7 @@ class AlertServiceTest {
     @Test
     @DisplayName("listing for an unknown portfolio is a 404")
     void listForUnknownPortfolio() {
-        when(portfolioRepository.existsById(99L)).thenReturn(false);
+        when(portfolioRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.findByPortfolio(99L))
                 .isInstanceOf(ResourceNotFoundException.class);

@@ -185,7 +185,7 @@ In the backend folder:
 ./gradlew test
 ```
 
-286 tests. The coverage report lands in
+310 tests. The coverage report lands in
 `build/reports/jacoco/test/html/index.html`. Running `./gradlew check` also fails
 the build if coverage falls below 65%.
 
@@ -216,7 +216,7 @@ curl "https://api.nbp.pl/api/exchangerates/tables/A?format=json"
 
 **Rate limits.** CoinGecko's free tier is rate limited. The default refresh
 interval of fifteen minutes stays comfortably inside it. If you shorten
-`app.scheduler.price-refresh-ms` a lot, you may be throttled; the application
+`app.scheduler.market-refresh-ms` a lot, you may be throttled; the application
 reports that as HTTP 503 rather than pretending the data is missing.
 
 **When a provider is down.** The two are refreshed independently. If CoinGecko is
@@ -225,7 +225,8 @@ provider failed. Nothing is silently skipped.
 
 ### The API itself
 
-The REST API has **48 endpoints** under `/v1`, covering GET, POST, PUT and DELETE.
+The REST API has **47 endpoints** under `/v1`, covering GET, POST, PUT, PATCH and DELETE.
+Opening the base URL (`GET /`) returns a short index of them.
 The full list is in `README.md`.
 
 Errors always come back in the same shape, so a client only needs to handle one:
@@ -273,7 +274,7 @@ that matter most:
 | `app.backend.base-url` | `http://localhost:8080/v1` | Frontend: where the API is |
 | `app.cors.allowed-origins` | `http://localhost:8081` | Backend: where the UI is |
 | `app.scheduler.enabled` | `true` | Turn scheduled jobs off entirely |
-| `app.scheduler.price-refresh-ms` | `900000` | Price refresh interval |
+| `app.scheduler.market-refresh-ms` | `900000` | Prices and rates refresh interval |
 | `app.alerts.cooldown-minutes` | `60` | Minimum gap before an alert refires |
 | `app.seed-demo-data` | `true` | Seed demo data into an empty database |
 
@@ -307,10 +308,10 @@ authentication could be added without reshaping the data model.
 
 | Requirement | Where it is met |
 |---|---|
-| 20+ REST endpoints, all four HTTP methods | 48 endpoints; see `README.md` |
+| 20+ REST endpoints, all four HTTP methods | 47 endpoints plus a root index; see `README.md` |
 | 2+ external data sources | CoinGecko and NBP, combined to value a portfolio |
 | Scheduler | `MarketDataScheduler`: price/rate refresh and alert evaluation, plus nightly history purge |
 | 10+ database write operations | Over 20; CRUD for five entities, plus snapshots, rates, alert events and audit rows |
-| 65%+ test coverage | 286 tests, 91.9% instruction coverage, enforced by the build |
+| 65%+ test coverage | 310 tests, 92.4% instruction coverage, enforced by the build |
 | 2+ design patterns | Strategy, Factory, Observer, Adapter and Facade |
 | Vaadin view layer | Separate frontend repository, five screens |

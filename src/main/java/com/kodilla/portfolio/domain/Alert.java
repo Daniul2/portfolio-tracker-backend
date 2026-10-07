@@ -3,6 +3,8 @@ package com.kodilla.portfolio.domain;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * A user-defined threshold to watch. This is purely a notification rule the
@@ -40,6 +42,10 @@ public class Alert {
 
     @Column(name = "last_triggered_at")
     private LocalDateTime lastTriggeredAt;
+
+    /** Events this alert has produced. */
+    @OneToMany(mappedBy = "alert", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<AlertEvent> events = new ArrayList<>();
 
     protected Alert() {
     }

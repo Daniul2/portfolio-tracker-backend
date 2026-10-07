@@ -8,8 +8,6 @@ import java.util.Optional;
 
 public interface AssetRepository extends JpaRepository<Asset, Long> {
 
-    Optional<Asset> findByExternalId(String externalId);
-
     Optional<Asset> findBySymbolIgnoreCase(String symbol);
 
     List<Asset> findByActiveTrue();

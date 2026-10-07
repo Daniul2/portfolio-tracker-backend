@@ -26,39 +26,34 @@ public class TransactionController {
         this.portfolioFacade = portfolioFacade;
     }
 
-    /** Endpoint 21. */
     @GetMapping
     public List<TransactionResponse> findByPortfolio(@RequestParam Long portfolioId) {
         return transactionService.findByPortfolio(portfolioId);
     }
 
-    /** Endpoint 22. */
     @GetMapping("/{id}")
     public TransactionResponse findById(@PathVariable Long id) {
         return transactionService.findById(id);
     }
 
-    /** Endpoint 23. */
     @PostMapping
     public ResponseEntity<TransactionResponse> create(@Valid @RequestBody TransactionRequest request) {
         TransactionResponse created = transactionService.create(request);
         return ResponseEntity.created(URI.create("/v1/transactions/" + created.id())).body(created);
     }
 
-    /** Endpoint 24. Records the trade and returns the repriced portfolio in one call. */
+    /** Records the trade and returns the repriced portfolio in one call. */
     @PostMapping("/with-summary")
     public PortfolioSummaryResponse createAndSummarise(@Valid @RequestBody TransactionRequest request) {
         return portfolioFacade.recordTransactionAndRevalue(request);
     }
 
-    /** Endpoint 25. */
     @PutMapping("/{id}")
     public TransactionResponse update(@PathVariable Long id,
                                       @Valid @RequestBody TransactionRequest request) {
         return transactionService.update(id, request);
     }
 
-    /** Endpoint 26. */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {

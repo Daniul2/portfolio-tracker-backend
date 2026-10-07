@@ -11,7 +11,5 @@ public interface ExchangeRateRepository extends JpaRepository<ExchangeRate, Long
 
     Optional<ExchangeRate> findFirstByCurrencyCodeOrderByEffectiveDateDesc(String currencyCode);
 
-    Optional<ExchangeRate> findByCurrencyCodeAndEffectiveDate(String currencyCode, LocalDate effectiveDate);
-
     List<ExchangeRate> findByEffectiveDate(LocalDate effectiveDate);
 }

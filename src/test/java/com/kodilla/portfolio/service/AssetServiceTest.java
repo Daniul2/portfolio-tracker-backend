@@ -7,7 +7,9 @@ import com.kodilla.portfolio.dto.AssetDtos.AssetResponse;
 import com.kodilla.portfolio.exception.BusinessRuleException;
 import com.kodilla.portfolio.exception.DuplicateResourceException;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
+import com.kodilla.portfolio.repository.AlertRepository;
 import com.kodilla.portfolio.repository.AssetRepository;
+import com.kodilla.portfolio.repository.PriceSnapshotRepository;
 import com.kodilla.portfolio.repository.TransactionRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,6 +33,10 @@ class AssetServiceTest {
     private AssetRepository assetRepository;
     @Mock
     private TransactionRepository transactionRepository;
+    @Mock
+    private AlertRepository alertRepository;
+    @Mock
+    private PriceSnapshotRepository snapshotRepository;
     @Mock
     private AuditService auditService;
     @InjectMocks
@@ -125,15 +131,36 @@ class AssetServiceTest {
     }
 
     @Test
-    @DisplayName("deletes an unreferenced asset")
-    void deletesUnreferencedAsset() {
+    @DisplayName("deletes an unreferenced asset together with its price history")
+    void deletesUnreferencedAssetAndItsSnapshots() {
         Asset existing = TestFixtures.asset(1L, "bitcoin", "BTC");
         when(assetRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(transactionRepository.countByAssetId(1L)).thenReturn(0L);
+        when(alertRepository.countByAssetId(1L)).thenReturn(0L);
+        when(snapshotRepository.deleteByAssetId(1L)).thenReturn(12L);
 
         service.delete(1L);
 
-        verify(assetRepository).delete(existing);
+        // Snapshots first: they hold a foreign key to the asset.
+        var inOrder = inOrder(snapshotRepository, assetRepository);
+        inOrder.verify(snapshotRepository).deleteByAssetId(1L);
+        inOrder.verify(assetRepository).delete(existing);
+    }
+
+    @Test
+    @DisplayName("refuses to delete an asset that an alert is watching")
+    void refusesToDeleteAssetWithAlerts() {
+        Asset existing = TestFixtures.asset(1L, "bitcoin", "BTC");
+        when(assetRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(transactionRepository.countByAssetId(1L)).thenReturn(0L);
+        when(alertRepository.countByAssetId(1L)).thenReturn(2L);
+
+        assertThatThrownBy(() -> service.delete(1L))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("2 alert(s)");
+
+        verify(snapshotRepository, never()).deleteByAssetId(anyLong());
+        verify(assetRepository, never()).delete(any());
     }
 
     @Test

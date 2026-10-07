@@ -14,4 +14,6 @@ public interface PriceSnapshotRepository extends JpaRepository<PriceSnapshot, Lo
     List<PriceSnapshot> findByAssetIdAndCapturedAtAfterOrderByCapturedAtAsc(Long assetId, LocalDateTime after);
 
     long deleteByCapturedAtBefore(LocalDateTime cutoff);
+
+    long deleteByAssetId(Long assetId);
 }

@@ -6,9 +6,12 @@ import com.kodilla.portfolio.dto.TransactionDtos.TransactionRequest;
 import com.kodilla.portfolio.dto.TransactionDtos.TransactionResponse;
 import com.kodilla.portfolio.exception.BusinessRuleException;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
+import com.kodilla.portfolio.repository.AlertRepository;
 import com.kodilla.portfolio.repository.AssetRepository;
 import com.kodilla.portfolio.repository.PortfolioRepository;
+import com.kodilla.portfolio.repository.PriceSnapshotRepository;
 import com.kodilla.portfolio.repository.TransactionRepository;
+import com.kodilla.portfolio.repository.UserRepository;
 import com.kodilla.portfolio.service.valuation.HoldingCalculator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -37,6 +40,12 @@ class TransactionServiceTest {
     @Mock
     private AssetRepository assetRepository;
     @Mock
+    private UserRepository userRepository;
+    @Mock
+    private AlertRepository alertRepository;
+    @Mock
+    private PriceSnapshotRepository snapshotRepository;
+    @Mock
     private AuditService auditService;
 
     private TransactionService service;
@@ -49,8 +58,12 @@ class TransactionServiceTest {
     @BeforeEach
     void setUp() {
         // A real calculator: the sell-validation logic is what these tests check.
-        service = new TransactionService(transactionRepository, portfolioRepository,
-                assetRepository, new HoldingCalculator(), auditService);
+        PortfolioService portfolioService = new PortfolioService(
+                portfolioRepository, userRepository, transactionRepository, auditService);
+        AssetService assetService = new AssetService(
+                assetRepository, transactionRepository, alertRepository, snapshotRepository, auditService);
+        service = new TransactionService(transactionRepository, portfolioService,
+                assetService, new HoldingCalculator(), auditService);
     }
 
     private TransactionRequest request(TransactionType type, String quantity) {
@@ -243,7 +256,7 @@ class TransactionServiceTest {
     @Test
     @DisplayName("listing for an unknown portfolio is a 404")
     void listForUnknownPortfolio() {
-        when(portfolioRepository.existsById(99L)).thenReturn(false);
+        when(portfolioRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.findByPortfolio(99L))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -252,7 +265,7 @@ class TransactionServiceTest {
     @Test
     @DisplayName("lists a portfolio's transactions")
     void listsTransactions() {
-        when(portfolioRepository.existsById(10L)).thenReturn(true);
+        when(portfolioRepository.findById(10L)).thenReturn(Optional.of(portfolio));
         when(transactionRepository.findByPortfolioIdOrderByExecutedAtDesc(10L))
                 .thenReturn(List.of(TestFixtures.buy(1L, portfolio, bitcoin, "1", "40000", past)));
 

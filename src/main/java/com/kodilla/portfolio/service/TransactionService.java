@@ -9,8 +9,6 @@ import com.kodilla.portfolio.dto.TransactionDtos.TransactionResponse;
 import com.kodilla.portfolio.exception.BusinessRuleException;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
 import com.kodilla.portfolio.mapper.DtoMapper;
-import com.kodilla.portfolio.repository.AssetRepository;
-import com.kodilla.portfolio.repository.PortfolioRepository;
 import com.kodilla.portfolio.repository.TransactionRepository;
 import com.kodilla.portfolio.service.valuation.Holding;
 import com.kodilla.portfolio.service.valuation.HoldingCalculator;
@@ -27,28 +25,26 @@ public class TransactionService {
     private static final String ENTITY = "Transaction";
 
     private final TransactionRepository transactionRepository;
-    private final PortfolioRepository portfolioRepository;
-    private final AssetRepository assetRepository;
+    private final PortfolioService portfolioService;
+    private final AssetService assetService;
     private final HoldingCalculator holdingCalculator;
     private final AuditService auditService;
 
     public TransactionService(TransactionRepository transactionRepository,
-                              PortfolioRepository portfolioRepository,
-                              AssetRepository assetRepository,
+                              PortfolioService portfolioService,
+                              AssetService assetService,
                               HoldingCalculator holdingCalculator,
                               AuditService auditService) {
         this.transactionRepository = transactionRepository;
-        this.portfolioRepository = portfolioRepository;
-        this.assetRepository = assetRepository;
+        this.portfolioService = portfolioService;
+        this.assetService = assetService;
         this.holdingCalculator = holdingCalculator;
         this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
     public List<TransactionResponse> findByPortfolio(Long portfolioId) {
-        if (!portfolioRepository.existsById(portfolioId)) {
-            throw new ResourceNotFoundException("Portfolio", portfolioId);
-        }
+        portfolioService.requirePortfolio(portfolioId);
         return transactionRepository.findByPortfolioIdOrderByExecutedAtDesc(portfolioId).stream()
                 .map(DtoMapper::toTransactionResponse)
                 .toList();
@@ -59,18 +55,12 @@ public class TransactionService {
         return DtoMapper.toTransactionResponse(requireTransaction(id));
     }
 
-    /** Database write #17: record a buy or sell. */
     @Transactional
     public TransactionResponse create(TransactionRequest request) {
-        Portfolio portfolio = portfolioRepository.findById(request.portfolioId())
-                .orElseThrow(() -> new ResourceNotFoundException("Portfolio", request.portfolioId()));
-        Asset asset = assetRepository.findById(request.assetId())
-                .orElseThrow(() -> new ResourceNotFoundException("Asset", request.assetId()));
-
-        LocalDateTime executedAt = request.executedAt() == null ? LocalDateTime.now() : request.executedAt();
-        if (executedAt.isAfter(LocalDateTime.now())) {
-            throw new BusinessRuleException("executedAt cannot be in the future");
-        }
+        Portfolio portfolio = portfolioService.requirePortfolio(request.portfolioId());
+        Asset asset = assetService.requireAsset(request.assetId());
+        LocalDateTime executedAt = requireNotInFuture(
+                request.executedAt() == null ? LocalDateTime.now() : request.executedAt());
 
         if (request.type() == TransactionType.SELL) {
             requireSufficientHolding(portfolio, asset, request.quantity(), null);
@@ -78,30 +68,22 @@ public class TransactionService {
 
         Transaction transaction = new Transaction(portfolio, asset, request.type(),
                 request.quantity(), request.pricePerUnitUsd(), executedAt);
-        transaction.setFeeUsd(request.feeUsd() == null ? BigDecimal.ZERO : request.feeUsd());
+        transaction.setFeeUsd(feeOrZero(request));
         transaction.setNote(request.note());
 
         Transaction saved = transactionRepository.save(transaction);
         auditService.record("TRANSACTION_CREATED", ENTITY, saved.getId(),
-                "%s %s %s @ %s USD in portfolio %d".formatted(
-                        saved.getType(), saved.getQuantity().toPlainString(),
-                        asset.getSymbol(), saved.getPricePerUnitUsd().toPlainString(),
-                        portfolio.getId()));
+                describe(saved) + " in portfolio " + portfolio.getId());
         return DtoMapper.toTransactionResponse(saved);
     }
 
-    /** Database write #18: correct a previously recorded transaction. */
+    /** Corrects a recorded transaction; an omitted date keeps the original one. */
     @Transactional
     public TransactionResponse update(Long id, TransactionRequest request) {
         Transaction transaction = requireTransaction(id);
-        Asset asset = assetRepository.findById(request.assetId())
-                .orElseThrow(() -> new ResourceNotFoundException("Asset", request.assetId()));
-
-        LocalDateTime executedAt = request.executedAt() == null
-                ? transaction.getExecutedAt() : request.executedAt();
-        if (executedAt.isAfter(LocalDateTime.now())) {
-            throw new BusinessRuleException("executedAt cannot be in the future");
-        }
+        Asset asset = assetService.requireAsset(request.assetId());
+        LocalDateTime executedAt = requireNotInFuture(
+                request.executedAt() == null ? transaction.getExecutedAt() : request.executedAt());
 
         if (request.type() == TransactionType.SELL) {
             // Exclude this transaction from the check so editing a sell in place
@@ -113,18 +95,15 @@ public class TransactionService {
         transaction.setType(request.type());
         transaction.setQuantity(request.quantity());
         transaction.setPricePerUnitUsd(request.pricePerUnitUsd());
-        transaction.setFeeUsd(request.feeUsd() == null ? BigDecimal.ZERO : request.feeUsd());
+        transaction.setFeeUsd(feeOrZero(request));
         transaction.setExecutedAt(executedAt);
         transaction.setNote(request.note());
 
         Transaction saved = transactionRepository.save(transaction);
-        auditService.record("TRANSACTION_UPDATED", ENTITY, id,
-                "%s %s %s @ %s USD".formatted(saved.getType(), saved.getQuantity().toPlainString(),
-                        asset.getSymbol(), saved.getPricePerUnitUsd().toPlainString()));
+        auditService.record("TRANSACTION_UPDATED", ENTITY, id, describe(saved));
         return DtoMapper.toTransactionResponse(saved);
     }
 
-    /** Database write #19: delete a transaction. */
     @Transactional
     public void delete(Long id) {
         Transaction transaction = requireTransaction(id);
@@ -136,6 +115,23 @@ public class TransactionService {
     private Transaction requireTransaction(Long id) {
         return transactionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ENTITY, id));
+    }
+
+    private static LocalDateTime requireNotInFuture(LocalDateTime executedAt) {
+        if (executedAt.isAfter(LocalDateTime.now())) {
+            throw new BusinessRuleException("executedAt cannot be in the future");
+        }
+        return executedAt;
+    }
+
+    private static BigDecimal feeOrZero(TransactionRequest request) {
+        return request.feeUsd() == null ? BigDecimal.ZERO : request.feeUsd();
+    }
+
+    private static String describe(Transaction transaction) {
+        return "%s %s %s @ %s USD".formatted(
+                transaction.getType(), transaction.getQuantity().toPlainString(),
+                transaction.getAsset().getSymbol(), transaction.getPricePerUnitUsd().toPlainString());
     }
 
     /**

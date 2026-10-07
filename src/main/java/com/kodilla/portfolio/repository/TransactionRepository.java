@@ -9,8 +9,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     List<Transaction> findByPortfolioIdOrderByExecutedAtDesc(Long portfolioId);
 
-    List<Transaction> findByPortfolioIdAndAssetId(Long portfolioId, Long assetId);
-
     long countByAssetId(Long assetId);
 
     long countByPortfolioId(Long portfolioId);

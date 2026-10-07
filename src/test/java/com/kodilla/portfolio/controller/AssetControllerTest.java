@@ -117,13 +117,13 @@ class AssetControllerTest {
     }
 
     @Test
-    @DisplayName("PUT /v1/assets/{id}/active toggles price tracking")
+    @DisplayName("PATCH /v1/assets/{id}/active toggles price tracking")
     void togglesActive() throws Exception {
         AssetResponse inactive = new AssetResponse(
                 1L, "bitcoin", "BTC", "Bitcoin", false, LocalDateTime.now());
         when(assetService.setActive(1L, false)).thenReturn(inactive);
 
-        mockMvc.perform(put("/v1/assets/1/active").param("value", "false"))
+        mockMvc.perform(patch("/v1/assets/1/active").param("value", "false"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(false));
     }

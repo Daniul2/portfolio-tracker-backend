@@ -2,6 +2,7 @@ package com.kodilla.portfolio.service.alert;
 
 import com.kodilla.portfolio.domain.Alert;
 import com.kodilla.portfolio.domain.AlertType;
+import com.kodilla.portfolio.exception.BusinessRuleException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +36,9 @@ class AlertStrategyFactoryTest {
     @Test
     @DisplayName("every alert type in the enum has an implementation")
     void coversTheWholeEnum() {
-        assertThat(factory.supportedTypes()).containsExactlyInAnyOrder(AlertType.values());
+        for (AlertType type : AlertType.values()) {
+            assertThat(factory.strategyFor(type)).as("strategy for %s", type).isPresent();
+        }
     }
 
     @Test
@@ -44,6 +47,22 @@ class AlertStrategyFactoryTest {
         AlertStrategyFactory sparse = new AlertStrategyFactory(List.of(new PriceAboveAlertStrategy()));
 
         assertThat(sparse.strategyFor(AlertType.PRICE_BELOW)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("require returns the strategy when one is registered")
+    void requireReturnsStrategy() {
+        assertThat(factory.require(AlertType.PRICE_BELOW)).isInstanceOf(PriceBelowAlertStrategy.class);
+    }
+
+    @Test
+    @DisplayName("require rejects an unsupported type as a business-rule error")
+    void requireRejectsUnsupportedType() {
+        AlertStrategyFactory sparse = new AlertStrategyFactory(List.of(new PriceAboveAlertStrategy()));
+
+        assertThatThrownBy(() -> sparse.require(AlertType.PORTFOLIO_VALUE_BELOW))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("PORTFOLIO_VALUE_BELOW");
     }
 
     @Test
@@ -68,9 +87,11 @@ class AlertStrategyFactoryTest {
     }
 
     @Test
-    @DisplayName("supportedTypes cannot be mutated by callers")
-    void supportedTypesIsUnmodifiable() {
-        assertThatThrownBy(() -> factory.supportedTypes().clear())
-                .isInstanceOf(UnsupportedOperationException.class);
+    @DisplayName("an alert type watches an asset only if its strategy says so")
+    void strategiesDeclareWhetherTheyNeedAnAsset() {
+        assertThat(factory.require(AlertType.PRICE_ABOVE).requiresAsset()).isTrue();
+        assertThat(factory.require(AlertType.PRICE_BELOW).requiresAsset()).isTrue();
+        assertThat(factory.require(AlertType.PORTFOLIO_VALUE_ABOVE).requiresAsset()).isFalse();
+        assertThat(factory.require(AlertType.PORTFOLIO_VALUE_BELOW).requiresAsset()).isFalse();
     }
 }

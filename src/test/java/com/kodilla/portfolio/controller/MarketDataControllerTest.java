@@ -1,7 +1,8 @@
 package com.kodilla.portfolio.controller;
 
-import com.kodilla.portfolio.TestFixtures;
-import com.kodilla.portfolio.domain.Asset;
+import com.kodilla.portfolio.dto.AssetDtos.PriceSnapshotResponse;
+import com.kodilla.portfolio.dto.CommonDtos.AuditLogResponse;
+import com.kodilla.portfolio.dto.CommonDtos.ExchangeRateResponse;
 import com.kodilla.portfolio.dto.DashboardDtos.DashboardResponse;
 import com.kodilla.portfolio.dto.DashboardDtos.MarketRefreshResponse;
 import com.kodilla.portfolio.dto.UserDtos.UserResponse;
@@ -11,7 +12,6 @@ import com.kodilla.portfolio.facade.PortfolioFacade;
 import com.kodilla.portfolio.service.AuditService;
 import com.kodilla.portfolio.service.ExchangeRateService;
 import com.kodilla.portfolio.service.PriceService;
-import com.kodilla.portfolio.domain.AuditLog;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Nested;
@@ -21,9 +21,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.Matchers.containsString;
@@ -45,13 +45,13 @@ class MarketDataControllerTest {
         @MockitoBean
         private PriceService priceService;
 
-        private final Asset bitcoin = TestFixtures.asset(1L, "bitcoin", "BTC");
+        private final PriceSnapshotResponse btc = new PriceSnapshotResponse(
+                10L, 1L, "BTC", new BigDecimal("64000"), BigDecimal.ZERO, LocalDateTime.now());
 
         @Test
         @DisplayName("GET /v1/prices/latest lists the newest snapshot per asset")
         void listsLatest() throws Exception {
-            when(priceService.findLatestPrices())
-                    .thenReturn(Map.of(1L, TestFixtures.snapshot(10L, bitcoin, "64000")));
+            when(priceService.findLatestSnapshots()).thenReturn(List.of(btc));
 
             mockMvc.perform(get("/v1/prices/latest"))
                     .andExpect(status().isOk())
@@ -63,8 +63,7 @@ class MarketDataControllerTest {
         @Test
         @DisplayName("GET the latest price for one asset")
         void getsLatestForAsset() throws Exception {
-            when(priceService.findLatestForAsset(1L))
-                    .thenReturn(Optional.of(TestFixtures.snapshot(10L, bitcoin, "64000")));
+            when(priceService.findLatestForAsset(1L)).thenReturn(btc);
 
             mockMvc.perform(get("/v1/prices/assets/1/latest"))
                     .andExpect(status().isOk())
@@ -74,7 +73,8 @@ class MarketDataControllerTest {
         @Test
         @DisplayName("an asset never priced yields 404 rather than an empty object")
         void neverPricedIs404() throws Exception {
-            when(priceService.findLatestForAsset(1L)).thenReturn(Optional.empty());
+            when(priceService.findLatestForAsset(1L)).thenThrow(
+                    new ResourceNotFoundException("No price has been recorded yet for asset 1"));
 
             mockMvc.perform(get("/v1/prices/assets/1/latest"))
                     .andExpect(status().isNotFound())
@@ -84,8 +84,7 @@ class MarketDataControllerTest {
         @Test
         @DisplayName("history defaults to 7 days and honours an explicit window")
         void getsHistory() throws Exception {
-            when(priceService.findHistory(eq(1L), anyInt()))
-                    .thenReturn(List.of(TestFixtures.snapshot(10L, bitcoin, "64000")));
+            when(priceService.findHistory(eq(1L), anyInt())).thenReturn(List.of(btc));
 
             mockMvc.perform(get("/v1/prices/assets/1/history"))
                     .andExpect(status().isOk());
@@ -99,8 +98,7 @@ class MarketDataControllerTest {
         @Test
         @DisplayName("POST /v1/prices/refresh reports how many snapshots were saved")
         void refreshes() throws Exception {
-            when(priceService.refreshPrices())
-                    .thenReturn(List.of(TestFixtures.snapshot(10L, bitcoin, "64000")));
+            when(priceService.refreshPrices()).thenReturn(1);
 
             mockMvc.perform(post("/v1/prices/refresh"))
                     .andExpect(status().isOk())
@@ -123,11 +121,23 @@ class MarketDataControllerTest {
         @Test
         @DisplayName("DELETE /v1/prices/history trims stored snapshots")
         void purgesHistory() throws Exception {
-            when(priceService.purgeOlderThan(90)).thenReturn(12L);
+            when(priceService.purgeOlderThan(30)).thenReturn(12L);
 
-            mockMvc.perform(delete("/v1/prices/history").param("olderThanDays", "90"))
+            mockMvc.perform(delete("/v1/prices/history").param("olderThanDays", "30"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.recordsSaved").value(12));
+        }
+
+        @Test
+        @DisplayName("without a window the purge uses the configured retention, not a hard-coded one")
+        void purgeDefaultsToConfiguredRetention() throws Exception {
+            when(priceService.purgeOlderThan(90)).thenReturn(0L);
+
+            mockMvc.perform(delete("/v1/prices/history"))
+                    .andExpect(status().isOk());
+
+            // 90 comes from app.scheduler.price-retention-days in the test profile.
+            verify(priceService).purgeOlderThan(90);
         }
     }
 
@@ -140,11 +150,13 @@ class MarketDataControllerTest {
         @MockitoBean
         private ExchangeRateService exchangeRateService;
 
+        private final ExchangeRateResponse usd = new ExchangeRateResponse(
+                1L, "USD", new BigDecimal("3.7962"), LocalDate.now(), LocalDateTime.now());
+
         @Test
         @DisplayName("GET /v1/rates lists stored rates")
         void listsRates() throws Exception {
-            when(exchangeRateService.findAll())
-                    .thenReturn(List.of(TestFixtures.rate(1L, "USD", "3.7962")));
+            when(exchangeRateService.findAll()).thenReturn(List.of(usd));
 
             mockMvc.perform(get("/v1/rates"))
                     .andExpect(status().isOk())
@@ -155,8 +167,7 @@ class MarketDataControllerTest {
         @Test
         @DisplayName("GET /v1/rates/{code} returns the newest rate")
         void getsOneRate() throws Exception {
-            when(exchangeRateService.requireLatest("USD"))
-                    .thenReturn(TestFixtures.rate(1L, "USD", "3.7962"));
+            when(exchangeRateService.requireLatest("USD")).thenReturn(usd);
 
             mockMvc.perform(get("/v1/rates/USD"))
                     .andExpect(status().isOk())
@@ -209,8 +220,7 @@ class MarketDataControllerTest {
         @Test
         @DisplayName("POST /v1/rates/refresh reports how many rates were stored")
         void refreshes() throws Exception {
-            when(exchangeRateService.refreshRates())
-                    .thenReturn(List.of(TestFixtures.rate(1L, "USD", "3.7962")));
+            when(exchangeRateService.refreshRates()).thenReturn(1);
 
             mockMvc.perform(post("/v1/rates/refresh"))
                     .andExpect(status().isOk())
@@ -292,7 +302,8 @@ class MarketDataControllerTest {
         @DisplayName("GET /v1/audit lists recent state changes")
         void listsRecent() throws Exception {
             when(auditService.findRecent())
-                    .thenReturn(List.of(new AuditLog("USER_CREATED", "User", 1L, "username=demo")));
+                    .thenReturn(List.of(new AuditLogResponse(
+                            1L, "USER_CREATED", "User", 1L, "username=demo", LocalDateTime.now())));
 
             mockMvc.perform(get("/v1/audit"))
                     .andExpect(status().isOk())
@@ -304,7 +315,8 @@ class MarketDataControllerTest {
         @DisplayName("GET /v1/audit/by-type/{entityType} filters the trail")
         void filtersByType() throws Exception {
             when(auditService.findByEntityType("Alert"))
-                    .thenReturn(List.of(new AuditLog("ALERT_TRIGGERED", "Alert", 4L, "fired")));
+                    .thenReturn(List.of(new AuditLogResponse(
+                            2L, "ALERT_TRIGGERED", "Alert", 4L, "fired", LocalDateTime.now())));
 
             mockMvc.perform(get("/v1/audit/by-type/Alert"))
                     .andExpect(status().isOk())

@@ -10,4 +10,6 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
     List<Alert> findByPortfolioId(Long portfolioId);
 
     List<Alert> findByActiveTrue();
+
+    long countByAssetId(Long assetId);
 }

@@ -15,13 +15,13 @@ public class DashboardController {
         this.portfolioFacade = portfolioFacade;
     }
 
-    /** Endpoint 45. Everything the frontend's main screen needs, in one request. */
+    /** Everything the frontend's main screen needs, in one request. */
     @GetMapping("/{userId}")
     public DashboardResponse dashboard(@PathVariable Long userId) {
         return portfolioFacade.dashboardFor(userId);
     }
 
-    /** Endpoint 46. Refreshes both external sources and re-runs the alert rules. */
+    /** Refreshes both external sources and re-runs the alert rules. */
     @PostMapping("/refresh")
     public MarketRefreshResponse refresh() {
         return portfolioFacade.refreshMarketData();

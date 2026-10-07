@@ -2,12 +2,9 @@ package com.kodilla.portfolio.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kodilla.portfolio.dto.PortfolioDtos.*;
-import com.kodilla.portfolio.dto.TransactionDtos.TransactionResponse;
-import com.kodilla.portfolio.domain.TransactionType;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
 import com.kodilla.portfolio.facade.PortfolioFacade;
 import com.kodilla.portfolio.service.PortfolioService;
-import com.kodilla.portfolio.service.TransactionService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,8 +33,6 @@ class PortfolioControllerTest {
     private ObjectMapper objectMapper;
     @MockitoBean
     private PortfolioService portfolioService;
-    @MockitoBean
-    private TransactionService transactionService;
     @MockitoBean
     private PortfolioFacade portfolioFacade;
 
@@ -103,20 +98,6 @@ class PortfolioControllerTest {
                 .andExpect(jsonPath("$.holdings", hasSize(1)))
                 .andExpect(jsonPath("$.holdings[0].symbol").value("BTC"))
                 .andExpect(jsonPath("$.holdings[0].priced").value(true));
-    }
-
-    @Test
-    @DisplayName("GET /v1/portfolios/{id}/transactions")
-    void getsTransactions() throws Exception {
-        TransactionResponse transaction = new TransactionResponse(1L, 1L, 1L, "BTC",
-                TransactionType.BUY, new BigDecimal("0.25"), new BigDecimal("42000"),
-                BigDecimal.ZERO, new BigDecimal("10500"), LocalDateTime.now(), null);
-        when(transactionService.findByPortfolio(1L)).thenReturn(List.of(transaction));
-
-        mockMvc.perform(get("/v1/portfolios/1/transactions"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].symbol").value("BTC"))
-                .andExpect(jsonPath("$[0].type").value("BUY"));
     }
 
     @Test

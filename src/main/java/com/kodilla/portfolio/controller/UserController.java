@@ -21,38 +21,32 @@ public class UserController {
         this.userService = userService;
     }
 
-    /** Endpoint 1. */
     @GetMapping
     public List<UserResponse> findAll() {
         return userService.findAll();
     }
 
-    /** Endpoint 2. */
     @GetMapping("/{id}")
     public UserResponse findById(@PathVariable Long id) {
         return userService.findById(id);
     }
 
-    /** Endpoint 3. */
     @GetMapping("/by-username/{username}")
     public UserResponse findByUsername(@PathVariable String username) {
         return userService.findByUsername(username);
     }
 
-    /** Endpoint 4. */
     @PostMapping
     public ResponseEntity<UserResponse> create(@Valid @RequestBody UserRequest request) {
         UserResponse created = userService.create(request);
         return ResponseEntity.created(URI.create("/v1/users/" + created.id())).body(created);
     }
 
-    /** Endpoint 5. */
     @PutMapping("/{id}")
     public UserResponse update(@PathVariable Long id, @Valid @RequestBody UserRequest request) {
         return userService.update(id, request);
     }
 
-    /** Endpoint 6. */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {

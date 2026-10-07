@@ -14,12 +14,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AlertObserverTest {
@@ -47,8 +48,7 @@ class AlertObserverTest {
         @DisplayName("saves an event carrying the message and the observed value")
         void savesEvent() {
             AlertTrigger trigger = trigger();
-            when(alertEventRepository.save(any(AlertEvent.class)))
-                    .thenAnswer(invocation -> invocation.getArgument(0));
+            when(alertRepository.findById(7L)).thenReturn(Optional.of(trigger.alert()));
 
             observer.onAlertTriggered(trigger);
 
@@ -61,17 +61,27 @@ class AlertObserverTest {
         }
 
         @Test
-        @DisplayName("stamps the alert so the cooldown can suppress repeats")
+        @DisplayName("stamps the re-read alert so the cooldown can suppress repeats")
         void stampsAlert() {
             AlertTrigger trigger = trigger();
-            when(alertEventRepository.save(any(AlertEvent.class)))
-                    .thenAnswer(invocation -> invocation.getArgument(0));
+            Alert managed = TestFixtures.alert(7L, PORTFOLIO, BITCOIN, AlertType.PRICE_ABOVE, "50000");
+            when(alertRepository.findById(7L)).thenReturn(Optional.of(managed));
 
             observer.onAlertTriggered(trigger);
 
-            ArgumentCaptor<Alert> captor = ArgumentCaptor.forClass(Alert.class);
-            verify(alertRepository).save(captor.capture());
-            assertThat(captor.getValue().getLastTriggeredAt()).isNotNull();
+            // The instance loaded in this observer's own transaction is the one
+            // changed; it is flushed when that transaction commits.
+            assertThat(managed.getLastTriggeredAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("records nothing for an alert deleted since it was evaluated")
+        void skipsDeletedAlert() {
+            when(alertRepository.findById(7L)).thenReturn(Optional.empty());
+
+            observer.onAlertTriggered(trigger());
+
+            verifyNoInteractions(alertEventRepository);
         }
 
         @Test

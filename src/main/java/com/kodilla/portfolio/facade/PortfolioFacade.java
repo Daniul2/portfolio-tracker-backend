@@ -103,14 +103,14 @@ public class PortfolioFacade {
         int alertsTriggered = 0;
 
         try {
-            pricesSaved = priceService.refreshPrices().size();
+            pricesSaved = priceService.refreshPrices();
         } catch (ExternalApiException e) {
             log.warn("Price refresh failed: {}", e.getMessage());
             failures.add(e.getProvider() + ": " + e.getMessage());
         }
 
         try {
-            ratesSaved = exchangeRateService.refreshRates().size();
+            ratesSaved = exchangeRateService.refreshRates();
         } catch (ExternalApiException e) {
             log.warn("Exchange rate refresh failed: {}", e.getMessage());
             failures.add(e.getProvider() + ": " + e.getMessage());

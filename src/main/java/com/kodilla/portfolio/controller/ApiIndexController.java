@@ -15,7 +15,7 @@ public class ApiIndexController {
     private final String applicationName;
 
     public ApiIndexController(
-            @Value("${spring.application.name:portfolio-tracker-backend}") String applicationName) {
+            @Value("${spring.application.name}") String applicationName) {
         this.applicationName = applicationName;
     }
 
@@ -26,7 +26,7 @@ public class ApiIndexController {
         body.put("status", "running");
         body.put("description", "REST API for tracking a cryptocurrency investment portfolio. "
                 + "Prices come from CoinGecko, currency rates from NBP.");
-        body.put("documentation", "See README.md and DOCUMENTATION.mrkd in the repository");
+        body.put("documentation", "See README.md and DOCUMENTATION.md in the repository");
         body.put("frontend", "The Vaadin user interface runs separately, by default on port 8081");
         body.put("endpoints", endpointGroups());
         return body;

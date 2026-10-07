@@ -41,7 +41,7 @@ public class AlertEvaluationService {
                                   AlertPublisher alertPublisher,
                                   PriceService priceService,
                                   PortfolioValuationService valuationService,
-                                  @Value("${app.alerts.cooldown-minutes:60}") long cooldownMinutes) {
+                                  @Value("${app.alerts.cooldown-minutes}") long cooldownMinutes) {
         this.alertRepository = alertRepository;
         this.strategyFactory = strategyFactory;
         this.alertPublisher = alertPublisher;
@@ -51,7 +51,7 @@ public class AlertEvaluationService {
     }
 
     /** Evaluates all active alerts once. */
-    @Transactional
+    @Transactional(readOnly = true)
     public int evaluateAll() {
         List<Alert> activeAlerts = alertRepository.findByActiveTrue();
         if (activeAlerts.isEmpty()) {

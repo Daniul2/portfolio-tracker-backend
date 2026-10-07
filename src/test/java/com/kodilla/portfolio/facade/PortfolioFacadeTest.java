@@ -55,23 +55,6 @@ class PortfolioFacadeTest {
     private final User user = TestFixtures.user(1L, "demo");
     private final Portfolio portfolio = TestFixtures.portfolio(10L, user, "Main", "PLN");
 
-
-    private final com.kodilla.portfolio.domain.Asset asset =
-            TestFixtures.asset(100L, "bitcoin", "BTC");
-
-    /** Only the size of these lists matters to the facade. */
-    private List<com.kodilla.portfolio.domain.PriceSnapshot> snapshots(int count) {
-        return java.util.stream.IntStream.range(0, count)
-                .mapToObj(i -> TestFixtures.snapshot((long) i, asset, "50000"))
-                .toList();
-    }
-
-    private List<com.kodilla.portfolio.domain.ExchangeRate> rates(int count) {
-        return java.util.stream.IntStream.range(0, count)
-                .mapToObj(i -> TestFixtures.rate((long) i, "C" + i, "3.79"))
-                .toList();
-    }
-
     private PortfolioValuation valuation(String totalUsd) {
         return new PortfolioValuation(10L, "Main", "PLN",
                 new BigDecimal("100"), new BigDecimal(totalUsd), BigDecimal.ZERO,
@@ -161,8 +144,8 @@ class PortfolioFacadeTest {
     @Test
     @DisplayName("a successful refresh reports both sources and the alerts fired")
     void refreshesEverything() {
-        when(priceService.refreshPrices()).thenReturn(snapshots(4));
-        when(exchangeRateService.refreshRates()).thenReturn(rates(2));
+        when(priceService.refreshPrices()).thenReturn(4);
+        when(exchangeRateService.refreshRates()).thenReturn(2);
         when(alertEvaluationService.evaluateAll()).thenReturn(2);
 
         MarketRefreshResponse result = facade.refreshMarketData();
@@ -178,7 +161,7 @@ class PortfolioFacadeTest {
     void priceFailureDoesNotBlockRates() {
         when(priceService.refreshPrices())
                 .thenThrow(new ExternalApiException("CoinGecko", "timed out"));
-        when(exchangeRateService.refreshRates()).thenReturn(rates(2));
+        when(exchangeRateService.refreshRates()).thenReturn(2);
 
         MarketRefreshResponse result = facade.refreshMarketData();
 
@@ -192,7 +175,7 @@ class PortfolioFacadeTest {
     @Test
     @DisplayName("a rate outage still lets prices refresh")
     void rateFailureDoesNotBlockPrices() {
-        when(priceService.refreshPrices()).thenReturn(snapshots(1));
+        when(priceService.refreshPrices()).thenReturn(1);
         when(exchangeRateService.refreshRates())
                 .thenThrow(new ExternalApiException("NBP", "unreachable"));
         when(alertEvaluationService.evaluateAll()).thenReturn(0);
@@ -221,8 +204,8 @@ class PortfolioFacadeTest {
     @Test
     @DisplayName("alerts are not evaluated when no price was refreshed")
     void skipsAlertsWithoutFreshPrices() {
-        when(priceService.refreshPrices()).thenReturn(List.of());
-        when(exchangeRateService.refreshRates()).thenReturn(rates(1));
+        when(priceService.refreshPrices()).thenReturn(0);
+        when(exchangeRateService.refreshRates()).thenReturn(1);
 
         MarketRefreshResponse result = facade.refreshMarketData();
 

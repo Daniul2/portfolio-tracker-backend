@@ -53,7 +53,6 @@ public class PortfolioService {
         return toResponse(requirePortfolio(id));
     }
 
-    /** Database write #14: create a portfolio. */
     @Transactional
     public PortfolioResponse create(PortfolioRequest request) {
         User user = userRepository.findById(request.userId())
@@ -71,7 +70,6 @@ public class PortfolioService {
         return DtoMapper.toPortfolioResponse(saved, 0);
     }
 
-    /** Database write #15: rename a portfolio or change its reporting currency. */
     @Transactional
     public PortfolioResponse update(Long id, PortfolioRequest request) {
         Portfolio portfolio = requirePortfolio(id);
@@ -92,7 +90,6 @@ public class PortfolioService {
         return toResponse(saved);
     }
 
-    /** Database write #16: delete a portfolio with its transactions and alerts. */
     @Transactional
     public void delete(Long id) {
         Portfolio portfolio = requirePortfolio(id);

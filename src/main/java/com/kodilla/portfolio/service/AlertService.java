@@ -2,7 +2,6 @@ package com.kodilla.portfolio.service;
 
 import com.kodilla.portfolio.domain.Alert;
 import com.kodilla.portfolio.domain.AlertEvent;
-import com.kodilla.portfolio.domain.AlertType;
 import com.kodilla.portfolio.domain.Asset;
 import com.kodilla.portfolio.domain.Portfolio;
 import com.kodilla.portfolio.dto.AlertDtos.AlertEventResponse;
@@ -13,8 +12,7 @@ import com.kodilla.portfolio.exception.ResourceNotFoundException;
 import com.kodilla.portfolio.mapper.DtoMapper;
 import com.kodilla.portfolio.repository.AlertEventRepository;
 import com.kodilla.portfolio.repository.AlertRepository;
-import com.kodilla.portfolio.repository.AssetRepository;
-import com.kodilla.portfolio.repository.PortfolioRepository;
+import com.kodilla.portfolio.service.alert.AlertStrategy;
 import com.kodilla.portfolio.service.alert.AlertStrategyFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,21 +26,21 @@ public class AlertService {
 
     private final AlertRepository alertRepository;
     private final AlertEventRepository alertEventRepository;
-    private final PortfolioRepository portfolioRepository;
-    private final AssetRepository assetRepository;
+    private final PortfolioService portfolioService;
+    private final AssetService assetService;
     private final AlertStrategyFactory strategyFactory;
     private final AuditService auditService;
 
     public AlertService(AlertRepository alertRepository,
                         AlertEventRepository alertEventRepository,
-                        PortfolioRepository portfolioRepository,
-                        AssetRepository assetRepository,
+                        PortfolioService portfolioService,
+                        AssetService assetService,
                         AlertStrategyFactory strategyFactory,
                         AuditService auditService) {
         this.alertRepository = alertRepository;
         this.alertEventRepository = alertEventRepository;
-        this.portfolioRepository = portfolioRepository;
-        this.assetRepository = assetRepository;
+        this.portfolioService = portfolioService;
+        this.assetService = assetService;
         this.strategyFactory = strategyFactory;
         this.auditService = auditService;
     }
@@ -54,9 +52,7 @@ public class AlertService {
 
     @Transactional(readOnly = true)
     public List<AlertResponse> findByPortfolio(Long portfolioId) {
-        if (!portfolioRepository.existsById(portfolioId)) {
-            throw new ResourceNotFoundException("Portfolio", portfolioId);
-        }
+        portfolioService.requirePortfolio(portfolioId);
         return alertRepository.findByPortfolioId(portfolioId).stream()
                 .map(DtoMapper::toAlertResponse).toList();
     }
@@ -66,53 +62,38 @@ public class AlertService {
         return DtoMapper.toAlertResponse(requireAlert(id));
     }
 
-    /** Database write #20: create a price or portfolio-value alert. */
     @Transactional
     public AlertResponse create(AlertRequest request) {
-        Portfolio portfolio = portfolioRepository.findById(request.portfolioId())
-                .orElseThrow(() -> new ResourceNotFoundException("Portfolio", request.portfolioId()));
-
-        if (strategyFactory.strategyFor(request.type()).isEmpty()) {
-            throw new BusinessRuleException("Alert type " + request.type() + " is not supported");
-        }
-
+        Portfolio portfolio = portfolioService.requirePortfolio(request.portfolioId());
         Asset asset = resolveAsset(request);
 
-        Alert saved = alertRepository.save(
-                new Alert(portfolio, asset, request.type(), request.threshold()));
+        Alert alert = new Alert(portfolio, asset, request.type(), request.threshold());
         if (request.active() != null) {
-            saved.setActive(request.active());
-            saved = alertRepository.save(saved);
+            alert.setActive(request.active());
         }
+        Alert saved = alertRepository.save(alert);
 
-        auditService.record("ALERT_CREATED", ENTITY, saved.getId(),
-                "type=" + saved.getType() + ", threshold=" + saved.getThreshold().toPlainString());
+        auditService.record("ALERT_CREATED", ENTITY, saved.getId(), describe(saved));
         return DtoMapper.toAlertResponse(saved);
     }
 
-    /** Database write #21: change an alert's threshold, type or active flag. */
     @Transactional
     public AlertResponse update(Long id, AlertRequest request) {
         Alert alert = requireAlert(id);
 
-        if (strategyFactory.strategyFor(request.type()).isEmpty()) {
-            throw new BusinessRuleException("Alert type " + request.type() + " is not supported");
-        }
-
-        alert.setType(request.type());
         alert.setAsset(resolveAsset(request));
+        alert.setType(request.type());
         alert.setThreshold(request.threshold());
         if (request.active() != null) {
             alert.setActive(request.active());
         }
 
         Alert saved = alertRepository.save(alert);
-        auditService.record("ALERT_UPDATED", ENTITY, id,
-                "type=" + saved.getType() + ", threshold=" + saved.getThreshold().toPlainString());
+        auditService.record("ALERT_UPDATED", ENTITY, id, describe(saved));
         return DtoMapper.toAlertResponse(saved);
     }
 
-    /** Database write #22: delete an alert. */
+    /** Removes the alert; its fired events go with it by cascade. */
     @Transactional
     public void delete(Long id) {
         Alert alert = requireAlert(id);
@@ -122,9 +103,7 @@ public class AlertService {
 
     @Transactional(readOnly = true)
     public List<AlertEventResponse> findEventsByPortfolio(Long portfolioId) {
-        if (!portfolioRepository.existsById(portfolioId)) {
-            throw new ResourceNotFoundException("Portfolio", portfolioId);
-        }
+        portfolioService.requirePortfolio(portfolioId);
         return alertEventRepository.findByAlertPortfolioIdOrderByCreatedAtDesc(portfolioId).stream()
                 .map(DtoMapper::toAlertEventResponse).toList();
     }
@@ -135,7 +114,6 @@ public class AlertService {
                 .map(DtoMapper::toAlertEventResponse).toList();
     }
 
-    /** Database write #23: mark a fired alert as seen. */
     @Transactional
     public AlertEventResponse acknowledgeEvent(Long eventId) {
         AlertEvent event = alertEventRepository.findById(eventId)
@@ -147,25 +125,26 @@ public class AlertService {
     }
 
     /**
-     * Price alerts need an asset; portfolio-level alerts must not have one, or
-     * the response would imply a scope the strategy does not actually use.
+     * Whether an alert needs an asset is the strategy's call, not this service's, so a new alert
+     * type never requires a change here.
      */
     private Asset resolveAsset(AlertRequest request) {
-        boolean assetRequired = request.type() == AlertType.PRICE_ABOVE
-                || request.type() == AlertType.PRICE_BELOW;
-
-        if (!assetRequired) {
+        AlertStrategy strategy = strategyFactory.require(request.type());
+        if (!strategy.requiresAsset()) {
             return null;
         }
         if (request.assetId() == null) {
             throw new BusinessRuleException("assetId is required for alert type " + request.type());
         }
-        return assetRepository.findById(request.assetId())
-                .orElseThrow(() -> new ResourceNotFoundException("Asset", request.assetId()));
+        return assetService.requireAsset(request.assetId());
     }
 
     private Alert requireAlert(Long id) {
         return alertRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ENTITY, id));
+    }
+
+    private static String describe(Alert alert) {
+        return "type=" + alert.getType() + ", threshold=" + alert.getThreshold().toPlainString();
     }
 }

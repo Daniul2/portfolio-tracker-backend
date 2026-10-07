@@ -1,6 +1,7 @@
 package com.kodilla.portfolio.service.alert;
 
 import com.kodilla.portfolio.domain.AlertType;
+import com.kodilla.portfolio.exception.BusinessRuleException;
 import org.springframework.stereotype.Component;
 
 import java.util.EnumMap;
@@ -30,8 +31,9 @@ public class AlertStrategyFactory {
         return Optional.ofNullable(strategiesByType.get(type));
     }
 
-    /** Alert types that currently have an implementation registered. */
-    public java.util.Set<AlertType> supportedTypes() {
-        return java.util.Collections.unmodifiableSet(strategiesByType.keySet());
+    /** As {@link #strategyFor}, but a missing strategy is the caller's error (HTTP 422). */
+    public AlertStrategy require(AlertType type) {
+        return strategyFor(type).orElseThrow(() ->
+                new BusinessRuleException("Alert type " + type + " is not supported"));
     }
 }

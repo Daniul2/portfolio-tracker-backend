@@ -3,6 +3,7 @@ package com.kodilla.portfolio.service;
 import com.kodilla.portfolio.TestFixtures;
 import com.kodilla.portfolio.domain.Asset;
 import com.kodilla.portfolio.domain.PriceSnapshot;
+import com.kodilla.portfolio.dto.AssetDtos.PriceSnapshotResponse;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
 import com.kodilla.portfolio.external.CryptoPriceProvider;
 import com.kodilla.portfolio.external.CryptoQuote;
@@ -61,9 +62,7 @@ class PriceServiceTest {
         when(snapshotRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
         when(priceProvider.providerName()).thenReturn("CoinGecko");
 
-        List<PriceSnapshot> saved = service.refreshPrices();
-
-        assertThat(saved).hasSize(2);
+        assertThat(service.refreshPrices()).isEqualTo(2);
         verify(auditService).record(eq("PRICES_REFRESHED"), eq("PriceSnapshot"), isNull(), anyString());
     }
 
@@ -89,7 +88,7 @@ class PriceServiceTest {
     void skipsProviderWithoutActiveAssets() {
         when(assetRepository.findByActiveTrue()).thenReturn(List.of());
 
-        assertThat(service.refreshPrices()).isEmpty();
+        assertThat(service.refreshPrices()).isZero();
 
         verifyNoInteractions(priceProvider);
         verify(snapshotRepository, never()).saveAll(anyList());
@@ -102,7 +101,7 @@ class PriceServiceTest {
         when(priceProvider.fetchPrices(anyCollection())).thenReturn(Map.of());
         when(priceProvider.providerName()).thenReturn("CoinGecko");
 
-        assertThat(service.refreshPrices()).isEmpty();
+        assertThat(service.refreshPrices()).isZero();
 
         verify(snapshotRepository, never()).saveAll(anyList());
     }
@@ -117,10 +116,11 @@ class PriceServiceTest {
         when(snapshotRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
         when(priceProvider.providerName()).thenReturn("CoinGecko");
 
-        List<PriceSnapshot> saved = service.refreshPrices();
+        assertThat(service.refreshPrices()).isEqualTo(1);
 
-        assertThat(saved).hasSize(1);
-        assertThat(saved.get(0).getAsset()).isEqualTo(bitcoin);
+        ArgumentCaptor<List<PriceSnapshot>> captor = ArgumentCaptor.forClass(List.class);
+        verify(snapshotRepository).saveAll(captor.capture());
+        assertThat(captor.getValue()).extracting(PriceSnapshot::getAsset).containsExactly(bitcoin);
     }
 
     @Test
@@ -190,11 +190,37 @@ class PriceServiceTest {
     }
 
     @Test
-    @DisplayName("findLatestForAsset delegates to the repository")
-    void findLatestForAssetDelegates() {
+    @DisplayName("the latest price for one asset is mapped to a response")
+    void findLatestForAssetMapsToResponse() {
         when(snapshotRepository.findFirstByAssetIdOrderByCapturedAtDesc(1L))
                 .thenReturn(Optional.of(TestFixtures.snapshot(10L, bitcoin, "64000")));
 
-        assertThat(service.findLatestForAsset(1L)).isPresent();
+        PriceSnapshotResponse response = service.findLatestForAsset(1L);
+
+        assertThat(response.symbol()).isEqualTo("BTC");
+        assertThat(response.priceUsd()).isEqualByComparingTo("64000");
+    }
+
+    @Test
+    @DisplayName("an asset never priced is a 404, not an empty body")
+    void findLatestForAssetMissing() {
+        when(snapshotRepository.findFirstByAssetIdOrderByCapturedAtDesc(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.findLatestForAsset(1L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("No price");
+    }
+
+    @Test
+    @DisplayName("latest snapshots for the API are mapped to responses")
+    void findLatestSnapshotsMapsToResponses() {
+        when(assetRepository.findAll()).thenReturn(List.of(bitcoin));
+        when(snapshotRepository.findFirstByAssetIdOrderByCapturedAtDesc(1L))
+                .thenReturn(Optional.of(TestFixtures.snapshot(10L, bitcoin, "64000")));
+
+        assertThat(service.findLatestSnapshots())
+                .singleElement()
+                .extracting(PriceSnapshotResponse::symbol)
+                .isEqualTo("BTC");
     }
 }

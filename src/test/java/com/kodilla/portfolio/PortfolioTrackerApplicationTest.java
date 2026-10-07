@@ -54,7 +54,9 @@ class PortfolioTrackerApplicationTest {
     void everyAlertTypeIsImplemented() {
         AlertStrategyFactory factory = context.getBean(AlertStrategyFactory.class);
 
-        assertThat(factory.supportedTypes()).containsExactlyInAnyOrder(AlertType.values());
+        for (AlertType type : AlertType.values()) {
+            assertThat(factory.strategyFor(type)).as("strategy for %s", type).isPresent();
+        }
     }
 
     @Test

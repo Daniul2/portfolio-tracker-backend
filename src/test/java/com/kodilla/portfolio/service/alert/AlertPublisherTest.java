@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 class AlertPublisherTest {
 
@@ -49,21 +50,20 @@ class AlertPublisherTest {
     @DisplayName("notifies every registered observer")
     void notifiesAllObservers() {
         List<String> calls = new ArrayList<>();
-        AlertPublisher publisher = new AlertPublisher(List.of(
+        AlertPublisher publisher = publisher(List.of(
                 new RecordingObserver("a", 0, calls),
                 new RecordingObserver("b", 1, calls)));
 
         publisher.publish(trigger);
 
         assertThat(calls).containsExactly("a", "b");
-        assertThat(publisher.observerCount()).isEqualTo(2);
     }
 
     @Test
     @DisplayName("respects the declared order regardless of registration order")
     void sortsByOrder() {
         List<String> calls = new ArrayList<>();
-        AlertPublisher publisher = new AlertPublisher(List.of(
+        AlertPublisher publisher = publisher(List.of(
                 new RecordingObserver("last", 9, calls),
                 new RecordingObserver("first", 0, calls),
                 new RecordingObserver("middle", 5, calls)));
@@ -89,7 +89,7 @@ class AlertPublisherTest {
             }
         };
 
-        AlertPublisher publisher = new AlertPublisher(List.of(
+        AlertPublisher publisher = publisher(List.of(
                 new RecordingObserver("before", 0, calls),
                 exploding,
                 new RecordingObserver("after", 2, calls)));
@@ -103,10 +103,14 @@ class AlertPublisherTest {
     @Test
     @DisplayName("publishing with no observers registered is harmless")
     void handlesNoObservers() {
-        AlertPublisher publisher = new AlertPublisher(List.of());
+        assertThatCode(() -> publisher(List.of()).publish(trigger)).doesNotThrowAnyException();
+    }
 
-        publisher.publish(trigger);
-
-        assertThat(publisher.observerCount()).isZero();
+    /**
+     * Transactions are a no-op here; real transactional isolation is covered by
+     * AlertObserverIsolationTest against the full application context.
+     */
+    private static AlertPublisher publisher(List<AlertObserver> observers) {
+        return new AlertPublisher(observers, TestFixtures.noOpTransactionManager());
     }
 }

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.TestConstructor;
 
@@ -42,6 +43,8 @@ class RepositoryTest {
     private AlertEventRepository alertEventRepository;
     @Autowired
     private AuditLogRepository auditLogRepository;
+    @Autowired
+    private TestEntityManager entityManager;
 
     private User user;
     private Portfolio portfolio;
@@ -79,7 +82,6 @@ class RepositoryTest {
     @DisplayName("an asset's external id is unique")
     void enforcesAssetExternalIdUniqueness() {
         assertThat(assetRepository.existsByExternalId("bitcoin")).isTrue();
-        assertThat(assetRepository.findByExternalId("bitcoin")).isPresent();
         assertThat(assetRepository.findBySymbolIgnoreCase("btc")).isPresent();
 
         assertThatThrownBy(() -> assetRepository.saveAndFlush(
@@ -140,8 +142,6 @@ class RepositoryTest {
         assertThat(ordered.get(1).getPricePerUnitUsd()).isEqualByComparingTo("40000");
         assertThat(transactionRepository.countByPortfolioId(portfolio.getId())).isEqualTo(2);
         assertThat(transactionRepository.countByAssetId(bitcoin.getId())).isEqualTo(2);
-        assertThat(transactionRepository.findByPortfolioIdAndAssetId(
-                portfolio.getId(), bitcoin.getId())).hasSize(2);
     }
 
     @Test
@@ -234,6 +234,67 @@ class RepositoryTest {
 
         assertThat(transactionRepository.count()).isZero();
         assertThat(alertRepository.count()).isZero();
+    }
+
+    /**
+     * An alert that has fired, written exactly as the application writes it: the event is saved
+     * through its own repository, not added to the alert's collection.
+     */
+    private Long firedAlertId() {
+        Alert alert = alertRepository.save(
+                new Alert(portfolio, bitcoin, AlertType.PRICE_ABOVE, new BigDecimal("1")));
+        alertEventRepository.save(new AlertEvent(alert, "BTC rose above 1 USD", new BigDecimal("64000")));
+        entityManager.flush();
+        entityManager.clear();
+        return alert.getId();
+    }
+
+    @Test
+    @DisplayName("deleting an alert that has fired removes its events instead of violating the FK")
+    void deletingFiredAlertRemovesItsEvents() {
+        Long alertId = firedAlertId();
+
+        alertRepository.delete(alertRepository.findById(alertId).orElseThrow());
+        entityManager.flush();
+
+        assertThat(alertRepository.count()).isZero();
+        assertThat(alertEventRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("deleting a portfolio cascades through its alerts to their events")
+    void deletingPortfolioRemovesFiredAlerts() {
+        firedAlertId();
+
+        portfolioRepository.delete(portfolioRepository.findById(portfolio.getId()).orElseThrow());
+        entityManager.flush();
+
+        assertThat(alertRepository.count()).isZero();
+        assertThat(alertEventRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("deleting a user removes the whole tree down to alert events")
+    void deletingUserRemovesEverythingTheyOwn() {
+        firedAlertId();
+
+        userRepository.delete(userRepository.findById(user.getId()).orElseThrow());
+        entityManager.flush();
+
+        assertThat(portfolioRepository.count()).isZero();
+        assertThat(alertRepository.count()).isZero();
+        assertThat(alertEventRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("snapshots are deleted per asset and alerts are counted per asset")
+    void queriesByAsset() {
+        snapshotRepository.save(new PriceSnapshot(bitcoin, new BigDecimal("64000"), BigDecimal.ZERO));
+        alertRepository.save(new Alert(portfolio, bitcoin, AlertType.PRICE_BELOW, new BigDecimal("10")));
+
+        assertThat(alertRepository.countByAssetId(bitcoin.getId())).isEqualTo(1);
+        assertThat(snapshotRepository.deleteByAssetId(bitcoin.getId())).isEqualTo(1);
+        assertThat(snapshotRepository.count()).isZero();
     }
 
     @Test

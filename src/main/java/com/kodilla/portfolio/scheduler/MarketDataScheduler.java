@@ -5,11 +5,12 @@ import com.kodilla.portfolio.facade.PortfolioFacade;
 import com.kodilla.portfolio.service.PriceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** The application's scheduled work. */
+/** The application's two scheduled jobs. */
 @Component
 @ConditionalOnProperty(name = "app.scheduler.enabled", havingValue = "true", matchIfMissing = true)
 public class MarketDataScheduler {
@@ -22,15 +23,15 @@ public class MarketDataScheduler {
 
     public MarketDataScheduler(PortfolioFacade portfolioFacade,
                                PriceService priceService,
-                               @org.springframework.beans.factory.annotation.Value(
-                                       "${app.scheduler.price-retention-days:90}") int retentionDays) {
+                               @Value("${app.scheduler.price-retention-days}") int retentionDays) {
         this.portfolioFacade = portfolioFacade;
         this.priceService = priceService;
         this.retentionDays = retentionDays;
     }
 
     /** Refreshes market data and fires any alerts whose threshold was crossed. */
-    @Scheduled(fixedDelayString = "${app.scheduler.price-refresh-ms}", initialDelay = 15_000)
+    @Scheduled(fixedDelayString = "${app.scheduler.market-refresh-ms}",
+            initialDelayString = "${app.scheduler.initial-delay-ms}")
     public void refreshMarketData() {
         try {
             MarketRefreshResponse result = portfolioFacade.refreshMarketData();
@@ -47,8 +48,8 @@ public class MarketDataScheduler {
         }
     }
 
-    /** Keeps the snapshot table to the retention window. Runs at 03:00 daily. */
-    @Scheduled(cron = "${app.scheduler.purge-cron:0 0 3 * * *}")
+    /** Keeps the snapshot table to the retention window. */
+    @Scheduled(cron = "${app.scheduler.purge-cron}")
     public void purgeOldPriceHistory() {
         try {
             long removed = priceService.purgeOlderThan(retentionDays);

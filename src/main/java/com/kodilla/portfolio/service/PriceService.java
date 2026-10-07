@@ -2,9 +2,11 @@ package com.kodilla.portfolio.service;
 
 import com.kodilla.portfolio.domain.Asset;
 import com.kodilla.portfolio.domain.PriceSnapshot;
+import com.kodilla.portfolio.dto.AssetDtos.PriceSnapshotResponse;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
 import com.kodilla.portfolio.external.CryptoPriceProvider;
 import com.kodilla.portfolio.external.CryptoQuote;
+import com.kodilla.portfolio.mapper.DtoMapper;
 import com.kodilla.portfolio.repository.AssetRepository;
 import com.kodilla.portfolio.repository.PriceSnapshotRepository;
 import org.slf4j.Logger;
@@ -19,7 +21,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /** Fetches prices from the crypto provider and keeps a local history of them. */
 @Service
@@ -45,14 +46,12 @@ public class PriceService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /**
-     * Database write #2: pull current prices for every active asset and store one snapshot each.
-     */
-    public List<PriceSnapshot> refreshPrices() {
+    /** Pulls current prices for every active asset and stores one snapshot each. */
+    public int refreshPrices() {
         List<Asset> activeAssets = assetRepository.findByActiveTrue();
         if (activeAssets.isEmpty()) {
             log.debug("No active assets to refresh");
-            return List.of();
+            return 0;
         }
 
         Map<String, Asset> byExternalId = new HashMap<>();
@@ -62,10 +61,10 @@ public class PriceService {
         Map<String, CryptoQuote> quotes = priceProvider.fetchPrices(byExternalId.keySet());
         if (quotes.isEmpty()) {
             log.warn("{} returned no usable quotes", priceProvider.providerName());
-            return List.of();
+            return 0;
         }
 
-        List<PriceSnapshot> saved = transactionTemplate.execute(status -> {
+        Integer saved = transactionTemplate.execute(status -> {
             List<PriceSnapshot> batch = new ArrayList<>();
             quotes.forEach((externalId, quote) -> {
                 Asset asset = byExternalId.get(externalId);
@@ -73,23 +72,37 @@ public class PriceService {
                     batch.add(new PriceSnapshot(asset, quote.priceUsd(), quote.change24hPercent()));
                 }
             });
-            List<PriceSnapshot> persisted = snapshotRepository.saveAll(batch);
+            int persisted = snapshotRepository.saveAll(batch).size();
             auditService.record("PRICES_REFRESHED", "PriceSnapshot", null,
-                    "Saved " + persisted.size() + " snapshot(s) from " + priceProvider.providerName());
+                    "Saved " + persisted + " snapshot(s) from " + priceProvider.providerName());
             return persisted;
         });
 
-        List<PriceSnapshot> result = saved == null ? List.of() : saved;
-        log.info("Refreshed {} price snapshot(s) from {}", result.size(), priceProvider.providerName());
+        int result = saved == null ? 0 : saved;
+        log.info("Refreshed {} price snapshot(s) from {}", result, priceProvider.providerName());
         return result;
     }
 
+    /** Newest stored price for every asset that has one. */
     @Transactional(readOnly = true)
-    public Optional<PriceSnapshot> findLatestForAsset(Long assetId) {
-        return snapshotRepository.findFirstByAssetIdOrderByCapturedAtDesc(assetId);
+    public List<PriceSnapshotResponse> findLatestSnapshots() {
+        return findLatestPrices().values().stream()
+                .map(DtoMapper::toPriceSnapshotResponse)
+                .toList();
     }
 
-    /** Latest snapshot per asset, keyed by asset id. Assets never priced are absent. */
+    @Transactional(readOnly = true)
+    public PriceSnapshotResponse findLatestForAsset(Long assetId) {
+        return snapshotRepository.findFirstByAssetIdOrderByCapturedAtDesc(assetId)
+                .map(DtoMapper::toPriceSnapshotResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No price has been recorded yet for asset " + assetId));
+    }
+
+    /**
+     * Latest snapshot per asset, keyed by asset id; assets never priced are absent.
+     * Returns entities because it feeds the valuation and alert services, not the API.
+     */
     @Transactional(readOnly = true)
     public Map<Long, PriceSnapshot> findLatestPrices() {
         Map<Long, PriceSnapshot> latest = new HashMap<>();
@@ -101,15 +114,18 @@ public class PriceService {
     }
 
     @Transactional(readOnly = true)
-    public List<PriceSnapshot> findHistory(Long assetId, int days) {
+    public List<PriceSnapshotResponse> findHistory(Long assetId, int days) {
         if (!assetRepository.existsById(assetId)) {
             throw new ResourceNotFoundException("Asset", assetId);
         }
         LocalDateTime since = LocalDateTime.now().minusDays(days);
-        return snapshotRepository.findByAssetIdAndCapturedAtAfterOrderByCapturedAtAsc(assetId, since);
+        return snapshotRepository.findByAssetIdAndCapturedAtAfterOrderByCapturedAtAsc(assetId, since)
+                .stream()
+                .map(DtoMapper::toPriceSnapshotResponse)
+                .toList();
     }
 
-    /** Database write #3: drop snapshots older than the retention window. */
+    /** Drops snapshots older than the given number of days. */
     @Transactional
     public long purgeOlderThan(int days) {
         long removed = snapshotRepository.deleteByCapturedAtBefore(LocalDateTime.now().minusDays(days));

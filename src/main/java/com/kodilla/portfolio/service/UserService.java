@@ -50,15 +50,10 @@ public class UserService {
         return DtoMapper.toUserResponse(user, portfolioRepository.countByUserId(user.getId()));
     }
 
-    /** Database write #7: create a user. */
     @Transactional
     public UserResponse create(UserRequest request) {
-        if (userRepository.existsByUsername(request.username())) {
-            throw new DuplicateResourceException("Username '" + request.username() + "' is already taken");
-        }
-        if (userRepository.existsByEmail(request.email())) {
-            throw new DuplicateResourceException("Email '" + request.email() + "' is already registered");
-        }
+        requireUsernameFree(request.username());
+        requireEmailFree(request.email());
 
         User saved = userRepository.save(
                 new User(request.username(), request.email(), request.displayName()));
@@ -66,18 +61,15 @@ public class UserService {
         return DtoMapper.toUserResponse(saved, 0);
     }
 
-    /** Database write #8: update a user. */
+    /** Uniqueness is only checked for values that actually change. */
     @Transactional
     public UserResponse update(Long id, UserRequest request) {
         User user = requireUser(id);
-
-        if (!user.getUsername().equals(request.username())
-                && userRepository.existsByUsername(request.username())) {
-            throw new DuplicateResourceException("Username '" + request.username() + "' is already taken");
+        if (!user.getUsername().equals(request.username())) {
+            requireUsernameFree(request.username());
         }
-        if (!user.getEmail().equals(request.email())
-                && userRepository.existsByEmail(request.email())) {
-            throw new DuplicateResourceException("Email '" + request.email() + "' is already registered");
+        if (!user.getEmail().equals(request.email())) {
+            requireEmailFree(request.email());
         }
 
         user.setUsername(request.username());
@@ -89,7 +81,7 @@ public class UserService {
         return DtoMapper.toUserResponse(saved, portfolioRepository.countByUserId(id));
     }
 
-    /** Database write #9: delete a user and, by cascade, their portfolios. */
+    /** Deletes the user and, by cascade, everything they own. */
     @Transactional
     public void delete(Long id) {
         User user = requireUser(id);
@@ -101,5 +93,17 @@ public class UserService {
     private User requireUser(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ENTITY, id));
+    }
+
+    private void requireUsernameFree(String username) {
+        if (userRepository.existsByUsername(username)) {
+            throw new DuplicateResourceException("Username '" + username + "' is already taken");
+        }
+    }
+
+    private void requireEmailFree(String email) {
+        if (userRepository.existsByEmail(email)) {
+            throw new DuplicateResourceException("Email '" + email + "' is already registered");
+        }
     }
 }

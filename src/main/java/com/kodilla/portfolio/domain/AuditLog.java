@@ -10,6 +10,9 @@ import java.time.LocalDateTime;
 })
 public class AuditLog {
 
+    /** Column length for {@code details}; longer text is truncated before saving. */
+    public static final int DETAILS_MAX_LENGTH = 800;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -23,7 +26,7 @@ public class AuditLog {
     @Column(name = "entity_id")
     private Long entityId;
 
-    @Column(length = 800)
+    @Column(length = DETAILS_MAX_LENGTH)
     private String details;
 
     @Column(name = "created_at", nullable = false)

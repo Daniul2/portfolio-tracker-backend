@@ -3,7 +3,6 @@ package com.kodilla.portfolio.controller;
 import com.kodilla.portfolio.dto.CommonDtos.ExchangeRateResponse;
 import com.kodilla.portfolio.dto.CommonDtos.RefreshResultResponse;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
-import com.kodilla.portfolio.mapper.DtoMapper;
 import com.kodilla.portfolio.service.ExchangeRateService;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,21 +21,17 @@ public class ExchangeRateController {
         this.exchangeRateService = exchangeRateService;
     }
 
-    /** Endpoint 41. */
     @GetMapping
     public List<ExchangeRateResponse> findAll() {
-        return exchangeRateService.findAll().stream()
-                .map(DtoMapper::toExchangeRateResponse)
-                .toList();
+        return exchangeRateService.findAll();
     }
 
-    /** Endpoint 42. */
     @GetMapping("/{currencyCode}")
     public ExchangeRateResponse findLatest(@PathVariable String currencyCode) {
-        return DtoMapper.toExchangeRateResponse(exchangeRateService.requireLatest(currencyCode));
+        return exchangeRateService.requireLatest(currencyCode);
     }
 
-    /** Endpoint 43. The USD-to-target multiplier used when valuing portfolios. */
+    /** The USD-to-target multiplier used when valuing portfolios. */
     @GetMapping("/convert")
     public Map<String, Object> usdRate(@RequestParam(defaultValue = "PLN") String to) {
         BigDecimal rate = exchangeRateService.usdToCurrencyRate(to)
@@ -45,10 +40,10 @@ public class ExchangeRateController {
         return Map.of("from", "USD", "to", to.toUpperCase(), "rate", rate);
     }
 
-    /** Endpoint 44. Pulls the current NBP table on demand. */
+    /** Pulls the current NBP table on demand. */
     @PostMapping("/refresh")
     public RefreshResultResponse refresh() {
-        int saved = exchangeRateService.refreshRates().size();
+        int saved = exchangeRateService.refreshRates();
         return new RefreshResultResponse("NBP", saved,
                 "Stored " + saved + " exchange rate(s)", LocalDateTime.now());
     }

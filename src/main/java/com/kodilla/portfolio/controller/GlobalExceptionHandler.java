@@ -31,6 +31,10 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    /** Longest parser message passed back to the client; Jackson's can be very long. */
+    private static final int MAX_DETAIL_LENGTH = 300;
+    private static final String ELLIPSIS = "...";
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -150,6 +154,8 @@ public class GlobalExceptionHandler {
         // Jackson messages can run to several lines of type detail; keep the first.
         int newline = message.indexOf('\n');
         String firstLine = newline < 0 ? message : message.substring(0, newline);
-        return firstLine.length() <= 300 ? firstLine : firstLine.substring(0, 297) + "...";
+        return firstLine.length() <= MAX_DETAIL_LENGTH
+                ? firstLine
+                : firstLine.substring(0, MAX_DETAIL_LENGTH - ELLIPSIS.length()) + ELLIPSIS;
     }
 }

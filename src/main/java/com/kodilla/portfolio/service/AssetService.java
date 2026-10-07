@@ -7,7 +7,9 @@ import com.kodilla.portfolio.exception.BusinessRuleException;
 import com.kodilla.portfolio.exception.DuplicateResourceException;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
 import com.kodilla.portfolio.mapper.DtoMapper;
+import com.kodilla.portfolio.repository.AlertRepository;
 import com.kodilla.portfolio.repository.AssetRepository;
+import com.kodilla.portfolio.repository.PriceSnapshotRepository;
 import com.kodilla.portfolio.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,13 +23,19 @@ public class AssetService {
 
     private final AssetRepository assetRepository;
     private final TransactionRepository transactionRepository;
+    private final AlertRepository alertRepository;
+    private final PriceSnapshotRepository snapshotRepository;
     private final AuditService auditService;
 
     public AssetService(AssetRepository assetRepository,
                         TransactionRepository transactionRepository,
+                        AlertRepository alertRepository,
+                        PriceSnapshotRepository snapshotRepository,
                         AuditService auditService) {
         this.assetRepository = assetRepository;
         this.transactionRepository = transactionRepository;
+        this.alertRepository = alertRepository;
+        this.snapshotRepository = snapshotRepository;
         this.auditService = auditService;
     }
 
@@ -53,13 +61,9 @@ public class AssetService {
         return DtoMapper.toAssetResponse(asset);
     }
 
-    /** Database write #10: add an asset to the tracked catalogue. */
     @Transactional
     public AssetResponse create(AssetRequest request) {
-        if (assetRepository.existsByExternalId(request.externalId())) {
-            throw new DuplicateResourceException(
-                    "Asset '" + request.externalId() + "' is already tracked");
-        }
+        requireUntracked(request.externalId());
         Asset saved = assetRepository.save(
                 new Asset(request.externalId(), request.symbol().toUpperCase(), request.name()));
         auditService.record("ASSET_CREATED", ENTITY, saved.getId(),
@@ -67,14 +71,11 @@ public class AssetService {
         return DtoMapper.toAssetResponse(saved);
     }
 
-    /** Database write #11: update an asset's details. */
     @Transactional
     public AssetResponse update(Long id, AssetRequest request) {
         Asset asset = requireAsset(id);
-        if (!asset.getExternalId().equals(request.externalId())
-                && assetRepository.existsByExternalId(request.externalId())) {
-            throw new DuplicateResourceException(
-                    "Asset '" + request.externalId() + "' is already tracked");
+        if (!asset.getExternalId().equals(request.externalId())) {
+            requireUntracked(request.externalId());
         }
         asset.setExternalId(request.externalId());
         asset.setSymbol(request.symbol().toUpperCase());
@@ -85,10 +86,7 @@ public class AssetService {
         return DtoMapper.toAssetResponse(saved);
     }
 
-    /**
-     * Database write #12: turn price tracking for an asset on or off. Preferred
-     * over deleting once transactions reference it.
-     */
+    /** Turns price tracking on or off. Preferred over deleting a referenced asset. */
     @Transactional
     public AssetResponse setActive(Long id, boolean active) {
         Asset asset = requireAsset(id);
@@ -99,24 +97,39 @@ public class AssetService {
         return DtoMapper.toAssetResponse(saved);
     }
 
-    /** Database write #13: remove an asset, provided nothing references it. */
+    /** Removes an asset together with its price history. */
     @Transactional
     public void delete(Long id) {
         Asset asset = requireAsset(id);
-        long referencing = transactionRepository.countByAssetId(id);
-        if (referencing > 0) {
+
+        long transactions = transactionRepository.countByAssetId(id);
+        if (transactions > 0) {
             throw new BusinessRuleException("Cannot delete asset " + asset.getSymbol()
-                    + ": it is referenced by " + referencing + " transaction(s). Deactivate it instead.");
+                    + ": it is referenced by " + transactions + " transaction(s). Deactivate it instead.");
         }
+        long alerts = alertRepository.countByAssetId(id);
+        if (alerts > 0) {
+            throw new BusinessRuleException("Cannot delete asset " + asset.getSymbol()
+                    + ": it is watched by " + alerts + " alert(s). Delete those alerts first.");
+        }
+
         String symbol = asset.getSymbol();
+        long snapshots = snapshotRepository.deleteByAssetId(id);
         assetRepository.delete(asset);
-        auditService.record("ASSET_DELETED", ENTITY, id, "symbol=" + symbol);
+        auditService.record("ASSET_DELETED", ENTITY, id,
+                "symbol=" + symbol + ", price snapshots removed=" + snapshots);
     }
 
-    /** Entity lookup used by other services that need the managed instance. */
+    /** Looks up an asset or fails with a 404; shared with the other services. */
     @Transactional(readOnly = true)
     public Asset requireAsset(Long id) {
         return assetRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ENTITY, id));
+    }
+
+    private void requireUntracked(String externalId) {
+        if (assetRepository.existsByExternalId(externalId)) {
+            throw new DuplicateResourceException("Asset '" + externalId + "' is already tracked");
+        }
     }
 }

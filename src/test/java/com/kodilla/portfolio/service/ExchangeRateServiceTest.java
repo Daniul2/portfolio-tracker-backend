@@ -2,6 +2,7 @@ package com.kodilla.portfolio.service;
 
 import com.kodilla.portfolio.TestFixtures;
 import com.kodilla.portfolio.domain.ExchangeRate;
+import com.kodilla.portfolio.dto.CommonDtos.ExchangeRateResponse;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
 import com.kodilla.portfolio.external.ExchangeRateProvider;
 import com.kodilla.portfolio.external.RateQuote;
@@ -54,9 +55,7 @@ class ExchangeRateServiceTest {
         when(rateRepository.findByEffectiveDate(today)).thenReturn(List.of());
         when(rateRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
 
-        List<ExchangeRate> saved = service.refreshRates();
-
-        assertThat(saved).hasSize(2);
+        assertThat(service.refreshRates()).isEqualTo(2);
         verify(auditService).record(eq("RATES_REFRESHED"), eq("ExchangeRate"), isNull(), anyString());
     }
 
@@ -110,7 +109,6 @@ class ExchangeRateServiceTest {
         service.refreshRates();
 
         verify(rateRepository, times(1)).findByEffectiveDate(today);
-        verify(rateRepository, never()).findByCurrencyCodeAndEffectiveDate(anyString(), any());
     }
 
     @Test
@@ -118,7 +116,7 @@ class ExchangeRateServiceTest {
     void handlesEmptyProviderResponse() {
         when(rateProvider.fetchLatestRates()).thenReturn(List.of());
 
-        assertThat(service.refreshRates()).isEmpty();
+        assertThat(service.refreshRates()).isZero();
 
         verify(rateRepository, never()).saveAll(anyList());
     }
@@ -210,10 +208,25 @@ class ExchangeRateServiceTest {
     }
 
     @Test
-    @DisplayName("findAll delegates to the repository")
-    void findAllDelegates() {
+    @DisplayName("requireLatest maps the newest stored rate to a response")
+    void requireLatestMapsToResponse() {
+        when(rateRepository.findFirstByCurrencyCodeOrderByEffectiveDateDesc("USD"))
+                .thenReturn(Optional.of(TestFixtures.rate(1L, "USD", "3.7962")));
+
+        ExchangeRateResponse response = service.requireLatest("usd");
+
+        assertThat(response.currencyCode()).isEqualTo("USD");
+        assertThat(response.ratePln()).isEqualByComparingTo("3.7962");
+    }
+
+    @Test
+    @DisplayName("findAll maps every stored rate to a response")
+    void findAllMapsToResponses() {
         when(rateRepository.findAll()).thenReturn(List.of(TestFixtures.rate(1L, "USD", "3.79")));
 
-        assertThat(service.findAll()).hasSize(1);
+        assertThat(service.findAll())
+                .singleElement()
+                .extracting(ExchangeRateResponse::currencyCode)
+                .isEqualTo("USD");
     }
 }

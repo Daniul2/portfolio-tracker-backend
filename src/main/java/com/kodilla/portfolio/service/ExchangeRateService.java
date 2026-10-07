@@ -1,9 +1,11 @@
 package com.kodilla.portfolio.service;
 
 import com.kodilla.portfolio.domain.ExchangeRate;
+import com.kodilla.portfolio.dto.CommonDtos.ExchangeRateResponse;
 import com.kodilla.portfolio.exception.ResourceNotFoundException;
 import com.kodilla.portfolio.external.ExchangeRateProvider;
 import com.kodilla.portfolio.external.RateQuote;
+import com.kodilla.portfolio.mapper.DtoMapper;
 import com.kodilla.portfolio.repository.ExchangeRateRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,24 +52,22 @@ public class ExchangeRateService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /**
-     * Database write #4: pull the latest NBP table and store one row per currency per effective
-     * date.
-     */
-    public List<ExchangeRate> refreshRates() {
+    /** Pulls the latest NBP table and stores one row per currency per effective date. */
+    public int refreshRates() {
         refreshLock.lock();
         try {
-            List<ExchangeRate> saved = transactionTemplate.execute(status -> persistLatestRates());
-            return saved == null ? List.of() : saved;
+            Integer saved = transactionTemplate.execute(status -> persistLatestRates());
+            return saved == null ? 0 : saved;
         } finally {
             refreshLock.unlock();
         }
     }
 
-    private List<ExchangeRate> persistLatestRates() {
+    /** Returns how many rates were stored. */
+    private int persistLatestRates() {
         List<RateQuote> quotes = rateProvider.fetchLatestRates();
         if (quotes.isEmpty()) {
-            return List.of();
+            return 0;
         }
 
         // The provider should not repeat a currency, but a duplicate in the
@@ -96,29 +96,25 @@ public class ExchangeRateService {
             }
         }
 
-        List<ExchangeRate> saved = rateRepository.saveAll(toSave);
+        int saved = rateRepository.saveAll(toSave).size();
 
         auditService.record("RATES_REFRESHED", "ExchangeRate", null,
-                "Stored " + saved.size() + " rate(s) from " + rateProvider.providerName());
-        log.info("Refreshed {} exchange rate(s) from {}", saved.size(), rateProvider.providerName());
+                "Stored " + saved + " rate(s) from " + rateProvider.providerName());
+        log.info("Refreshed {} exchange rate(s) from {}", saved, rateProvider.providerName());
         return saved;
     }
 
     @Transactional(readOnly = true)
-    public Optional<ExchangeRate> findLatest(String currencyCode) {
-        return rateRepository.findFirstByCurrencyCodeOrderByEffectiveDateDesc(
-                currencyCode.toUpperCase());
+    public ExchangeRateResponse requireLatest(String currencyCode) {
+        return findLatest(currencyCode)
+                .map(DtoMapper::toExchangeRateResponse)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "No exchange rate stored for currency " + currencyCode));
     }
 
     @Transactional(readOnly = true)
-    public ExchangeRate requireLatest(String currencyCode) {
-        return findLatest(currencyCode).orElseThrow(() -> new ResourceNotFoundException(
-                "No exchange rate stored for currency " + currencyCode));
-    }
-
-    @Transactional(readOnly = true)
-    public List<ExchangeRate> findAll() {
-        return rateRepository.findAll();
+    public List<ExchangeRateResponse> findAll() {
+        return rateRepository.findAll().stream().map(DtoMapper::toExchangeRateResponse).toList();
     }
 
     /**
@@ -146,5 +142,10 @@ public class ExchangeRateService {
                 .map(ExchangeRate::getRatePln)
                 .filter(plnPerTarget -> plnPerTarget.signum() != 0)
                 .map(plnPerTarget -> plnPerUsd.divide(plnPerTarget, RATE_SCALE, RoundingMode.HALF_UP));
+    }
+
+    private Optional<ExchangeRate> findLatest(String currencyCode) {
+        return rateRepository.findFirstByCurrencyCodeOrderByEffectiveDateDesc(
+                currencyCode.toUpperCase());
     }
 }
