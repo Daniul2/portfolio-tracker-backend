@@ -37,29 +37,25 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(ErrorResponse.of(404, "Not Found", e.getMessage()));
+        return respond(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ErrorResponse> handleDuplicate(DuplicateResourceException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ErrorResponse.of(409, "Conflict", e.getMessage()));
+        return respond(HttpStatus.CONFLICT, e.getMessage());
     }
 
     @ExceptionHandler(BusinessRuleException.class)
     public ResponseEntity<ErrorResponse> handleBusinessRule(BusinessRuleException e) {
-        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
-                .body(ErrorResponse.of(422, "Unprocessable Entity", e.getMessage()));
+        return respond(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
     }
 
     /** An upstream provider being down is not the client's fault. */
     @ExceptionHandler(ExternalApiException.class)
     public ResponseEntity<ErrorResponse> handleExternalApi(ExternalApiException e) {
         log.warn("External provider {} failed: {}", e.getProvider(), e.getMessage());
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ErrorResponse.of(503, "Service Unavailable",
-                        e.getProvider() + " is currently unavailable: " + e.getMessage()));
+        return respond(HttpStatus.SERVICE_UNAVAILABLE,
+                e.getProvider() + " is currently unavailable: " + e.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -68,8 +64,7 @@ public class GlobalExceptionHandler {
         for (FieldError fieldError : e.getBindingResult().getFieldErrors()) {
             fieldErrors.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());
         }
-        return ResponseEntity.badRequest().body(new ErrorResponse(
-                400, "Bad Request", "Request validation failed", fieldErrors, LocalDateTime.now()));
+        return respond(HttpStatus.BAD_REQUEST, "Request validation failed", fieldErrors);
     }
 
     /**
@@ -78,35 +73,28 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException e) {
-        return ResponseEntity.badRequest().body(ErrorResponse.of(
-                400, "Bad Request", "Request body could not be read: " + rootMessage(e)));
+        return respond(HttpStatus.BAD_REQUEST, "Request body could not be read: " + rootMessage(e));
     }
 
     /** A required query parameter was not supplied. */
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ErrorResponse> handleMissingParameter(
             MissingServletRequestParameterException e) {
-        return ResponseEntity.badRequest().body(new ErrorResponse(
-                400, "Bad Request", "Required parameter is missing",
-                Map.of(e.getParameterName(), "parameter of type "
-                        + e.getParameterType() + " is required"),
-                LocalDateTime.now()));
+        return respond(HttpStatus.BAD_REQUEST, "Required parameter is missing",
+                Map.of(e.getParameterName(), "parameter of type " + e.getParameterType() + " is required"));
     }
 
     /** A path variable or parameter could not be converted, e.g. /v1/users/abc. */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
-        return ResponseEntity.badRequest().body(new ErrorResponse(
-                400, "Bad Request", "Parameter has the wrong type",
-                Map.of(String.valueOf(e.getName()), "'" + e.getValue() + "' is not valid here"),
-                LocalDateTime.now()));
+        return respond(HttpStatus.BAD_REQUEST, "Parameter has the wrong type",
+                Map.of(String.valueOf(e.getName()), "'" + e.getValue() + "' is not valid here"));
     }
 
     /** No mapping and no static file for the requested path — an ordinary 404. */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> handleNoResource(NoResourceFoundException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ErrorResponse.of(
-                404, "Not Found", "No endpoint at " + e.getResourcePath()));
+        return respond(HttpStatus.NOT_FOUND, "No endpoint at " + e.getResourcePath());
     }
 
     /** Right path, wrong HTTP method — e.g. DELETE on a collection endpoint. */
@@ -118,24 +106,32 @@ public class GlobalExceptionHandler {
         String message = supported.isEmpty()
                 ? e.getMethod() + " is not supported here"
                 : e.getMethod() + " is not supported here; try " + supported;
-        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
-                .body(ErrorResponse.of(405, "Method Not Allowed", message));
+        return respond(HttpStatus.METHOD_NOT_ALLOWED, message);
     }
 
     /** Body sent as something other than JSON. */
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ErrorResponse> handleUnsupportedMediaType(
             HttpMediaTypeNotSupportedException e) {
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-                .body(ErrorResponse.of(415, "Unsupported Media Type",
-                        "Content-Type " + e.getContentType() + " is not supported; use application/json"));
+        return respond(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                "Content-Type " + e.getContentType() + " is not supported; use application/json");
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception e) {
         log.error("Unhandled exception", e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ErrorResponse.of(500, "Internal Server Error", "An unexpected error occurred"));
+        return respond(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred");
+    }
+
+    /** The HTTP status is the single source for both the response code and the body. */
+    private static ResponseEntity<ErrorResponse> respond(HttpStatus status, String message) {
+        return respond(status, message, Map.of());
+    }
+
+    private static ResponseEntity<ErrorResponse> respond(HttpStatus status, String message,
+                                                         Map<String, String> fieldErrors) {
+        return ResponseEntity.status(status).body(new ErrorResponse(
+                status.value(), status.getReasonPhrase(), message, fieldErrors, LocalDateTime.now()));
     }
 
     /**
