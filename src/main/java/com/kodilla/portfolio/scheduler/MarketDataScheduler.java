@@ -42,8 +42,8 @@ public class MarketDataScheduler {
                 log.warn("Scheduled refresh finished with problems: {}", result.failures());
             }
         } catch (RuntimeException e) {
-            // Never let an exception escape a scheduled method: Spring would
-            // silently stop rescheduling this job for the rest of the run.
+            // Spring would log and keep scheduling anyway; catching here keeps the
+            // log message readable and in one place.
             log.error("Scheduled market data refresh failed", e);
         }
     }

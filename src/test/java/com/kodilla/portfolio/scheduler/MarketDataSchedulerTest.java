@@ -50,8 +50,7 @@ class MarketDataSchedulerTest {
     @Test
     @DisplayName("an unexpected exception never escapes the scheduled method")
     void swallowsUnexpectedFailure() {
-        // If this escaped, Spring would stop rescheduling the job for the rest
-        // of the application's life, silently killing price updates.
+        // The job reports its own failure instead of relying on the framework's log.
         when(portfolioFacade.refreshMarketData()).thenThrow(new IllegalStateException("boom"));
 
         assertThatCode(() -> scheduler().refreshMarketData()).doesNotThrowAnyException();

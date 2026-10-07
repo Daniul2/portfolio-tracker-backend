@@ -306,8 +306,9 @@ over six collaborating services.
 - daily at 03:00: delete price history older than the retention window.
 
 `fixedDelay` rather than `fixedRate`, so a slow provider cannot cause runs to
-pile up. Both jobs swallow exceptions — letting one escape would make Spring
-stop rescheduling the job for the rest of the application's life.
+pile up. Both jobs catch and log their own exceptions, so a failure reads as a
+clear message. (Spring would keep rescheduling them even if an exception escaped;
+it is a plain `ScheduledExecutorService` that silently stops a task after one.)
 
 ### Database writes
 
